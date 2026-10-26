@@ -80,6 +80,11 @@ Commits `237617b`–`e0924da` (2026-10-26 16:59–18:06 UTC) are event-time plan
   the draughts + Raspi ZeroTier pair). Commit
   `36838350377dc56eb1ff45953769ad8c6c2a40d0`. Validation: unit tests
   green with vet/gofmt. Deploy + shippers pending release.
+- 2026-10-26: release v0.4.0, log watching live on draughts — tag `v0.4.0`,
+  multi-arch publish, server auto-updated with a ZeroTier-bound ingest port.
+  Verified: service active, /healthz ok, log watcher started, synthetic ops
+  + moderation test events accepted (202). Journal shipper installed on
+  draughts; Raspi excluded (not infra) — second monitored server TBD.
 
 ## Publication
 
