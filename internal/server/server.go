@@ -1,5 +1,5 @@
 // Package server exposes the harness over HTTP: health probes, diagnostic
-// runs, and model-guided investigations.
+// runs, model-guided investigations, and journal log intake.
 package server
 
 import (
@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"pakka/internal/diagnostics"
+	"pakka/internal/discord"
 	"pakka/internal/investigate"
 )
 
@@ -16,11 +17,13 @@ import (
 const maxBody = 64 << 10
 
 // Options wires the server dependencies. Model may be nil when no API key
-// is configured; live investigations then report unavailable.
+// is configured; live investigations then report unavailable. LogWatcher
+// may be nil; log intake then reports disabled.
 type Options struct {
 	Runner       *diagnostics.Runner
 	Investigator *investigate.Investigator
 	Model        investigate.Model
+	LogWatcher   *discord.LogWatcher
 	MaxRuns      int
 	Log          *slog.Logger
 }
@@ -30,6 +33,7 @@ type Server struct {
 	runner       *diagnostics.Runner
 	investigator *investigate.Investigator
 	model        investigate.Model
+	logWatcher   *discord.LogWatcher
 	sem          chan struct{}
 	log          *slog.Logger
 }
@@ -44,6 +48,7 @@ func New(opts Options) *Server {
 		runner:       opts.Runner,
 		investigator: opts.Investigator,
 		model:        opts.Model,
+		logWatcher:   opts.LogWatcher,
 		sem:          make(chan struct{}, maxRuns),
 		log:          opts.Log,
 	}
@@ -56,6 +61,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /readyz", s.healthz)
 	mux.HandleFunc("POST /v1/runs", s.createRun)
 	mux.HandleFunc("POST /v1/investigations", s.createInvestigation)
+	mux.HandleFunc("POST /v1/log-events", s.createLogEvent)
 	return mux
 }
 

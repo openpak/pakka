@@ -14,6 +14,7 @@ import (
 
 	"pakka/internal/config"
 	"pakka/internal/diagnostics"
+	"pakka/internal/discord"
 	"pakka/internal/evidence"
 	"pakka/internal/investigate"
 	"pakka/internal/meta"
@@ -182,4 +183,49 @@ func TestCreateInvestigationErrors(t *testing.T) {
 			t.Errorf("%s: code = %d, want 400 (%s)", tc.name, res.Code, res.Body.String())
 		}
 	}
+}
+
+type stubAnnouncer struct {
+	posts []string
+}
+
+func (s *stubAnnouncer) Announce(channelID, content string) error {
+	s.posts = append(s.posts, channelID+":"+content)
+	return nil
+}
+
+func TestCreateLogEventDisabled(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/v1/log-events", strings.NewReader(`{}`))
+	res := httptest.NewRecorder()
+	testServer(nil).Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusServiceUnavailable {
+		t.Errorf("code = %d, want 503", res.Code)
+	}
+}
+
+func TestCreateLogEvent(t *testing.T) {
+	ann := &stubAnnouncer{}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := config.Config{CheckTimeout: 5 * time.Second, InvestigateSteps: 5}
+	srv := New(Options{
+		Runner:       diagnostics.NewRunner(cfg),
+		Investigator: investigate.NewInvestigator(cfg),
+		LogWatcher:   investigateLogWatcher(ann, log),
+		MaxRuns:      4,
+		Log:          log,
+	})
+	payload := `{"MESSAGE":"boom","PRIORITY":"3","_SYSTEMD_UNIT":"openpak-x.service","_HOSTNAME":"h"}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/log-events", strings.NewReader(payload))
+	res := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusAccepted {
+		t.Fatalf("code = %d, body = %s", res.Code, res.Body.String())
+	}
+	if len(ann.posts) != 1 || !strings.HasPrefix(ann.posts[0], "ops1:") {
+		t.Errorf("posts = %v", ann.posts)
+	}
+}
+
+func investigateLogWatcher(ann *stubAnnouncer, log *slog.Logger) *discord.LogWatcher {
+	return discord.NewLogWatcher([]string{"openpak-*"}, "mod1", "ops1", ann, time.Hour, log)
 }

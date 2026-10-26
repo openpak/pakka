@@ -60,6 +60,12 @@ type Config struct {
 	SupportConnectionChannel string
 	// SupportBugChannel scopes bug reports.
 	SupportBugChannel string
+	// LogModChannel receives moderation signals (empty = disabled).
+	LogModChannel string
+	// LogOpsChannel receives service errors/warnings (empty = disabled).
+	LogOpsChannel string
+	// LogWatchUnits limits watched units (glob list, default openpak-*).
+	LogWatchUnits []string
 }
 
 func getenv(key, def string) string {
@@ -107,6 +113,9 @@ func Load() Config {
 		SupportSetupChannel:      os.Getenv("PAKKA_DISCORD_SETUP_CHANNEL"),
 		SupportConnectionChannel: os.Getenv("PAKKA_DISCORD_CONNECTION_CHANNEL"),
 		SupportBugChannel:        os.Getenv("PAKKA_DISCORD_BUG_CHANNEL"),
+		LogModChannel:            os.Getenv("PAKKA_DISCORD_MODLOG_CHANNEL"),
+		LogOpsChannel:            os.Getenv("PAKKA_DISCORD_OPS_ALERTS_CHANNEL"),
+		LogWatchUnits:            splitCSVDefault(os.Getenv("PAKKA_LOG_WATCH_UNITS"), "openpak-*"),
 	}
 }
 
@@ -118,6 +127,13 @@ func splitCSV(v string) []string {
 		}
 	}
 	return out
+}
+
+func splitCSVDefault(v, def string) []string {
+	if out := splitCSV(v); len(out) > 0 {
+		return out
+	}
+	return splitCSV(def)
 }
 
 func getenvDuration(key string, def time.Duration) time.Duration {

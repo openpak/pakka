@@ -67,12 +67,22 @@ func run() error {
 	} else {
 		log.Info("discord disabled: no bot token configured")
 	}
+	var watcher *discord.LogWatcher
+	if bot != nil && (cfg.LogModChannel != "" || cfg.LogOpsChannel != "") {
+		watcher = discord.NewLogWatcher(cfg.LogWatchUnits,
+			cfg.LogModChannel, cfg.LogOpsChannel,
+			discord.SenderAnnouncer{Sender: bot.Session()}, 30*time.Minute, log)
+		log.Info("log watcher started")
+	} else {
+		log.Info("log watcher disabled: needs bot plus alert channels")
+	}
 	srv := &http.Server{
 		Addr: cfg.Addr,
 		Handler: server.New(server.Options{
 			Runner:       runner,
 			Investigator: investigator,
 			Model:        model,
+			LogWatcher:   watcher,
 			MaxRuns:      cfg.MaxRuns,
 			Log:          log,
 		}).Handler(),

@@ -108,6 +108,14 @@ model (keywords cover API failures) and redirects out-of-scope questions to
 the right one (one redirect per user per hour). Unsure cases stay silent
 rather than misrouting.
 
+Log watching: each monitored host runs a journal shipper (a user service
+piping `journalctl --user --follow -o json` into `POST /v1/log-events`).
+Pakka filters by `PAKKA_LOG_WATCH_UNITS` (glob list, default `openpak-*`),
+posts priority warning+ to `PAKKA_DISCORD_OPS_ALERTS_CHANNEL` and
+moderation signals to `PAKKA_DISCORD_MODLOG_CHANNEL`, with a 30-minute
+cooldown per distinct message. The ingest endpoint is reachable only over
+localhost and the private ZeroTier network — never expose it publicly.
+
 ## Community
 
 - [OpenPak](https://openpak.org)
