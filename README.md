@@ -87,6 +87,27 @@ where the bot answers (empty = everywhere it can read). Live investigations
 need `PAKKA_META_API_KEY` too. Discord identity is never treated as an
 OpenPak account.
 
+Channel gating: `PAKKA_DISCORD_CHANNELS` limits where commands work (empty =
+everywhere). `investigate` can be further restricted with
+`PAKKA_DISCORD_OPS_CHANNELS` (empty = unrestricted).
+
+Status monitor: with `PAKKA_DISCORD_STATUS_CHANNEL` and
+`PAKKA_STATUS_TARGETS` (`name=https://...` or `name=tcp://host:port`,
+comma-separated) set, the bot polls every `PAKKA_STATUS_INTERVAL` (default
+60s) and posts up/down transitions to the status channel. The first poll
+only baselines, so restarts never flood.
+
+Welcomer: with `PAKKA_DISCORD_WELCOME_CHANNEL` set, the bot tags members who
+joined since the previous pass every `PAKKA_DISCORD_WELCOME_INTERVAL`
+(default 15m). Needs the Server Members intent enabled on the bot page.
+
+Support routing: with `PAKKA_DISCORD_SETUP_CHANNEL`,
+`PAKKA_DISCORD_CONNECTION_CHANNEL` and `PAKKA_DISCORD_BUG_CHANNEL` set (all
+three or disabled), the bot classifies messages in those channels with the
+model (keywords cover API failures) and redirects out-of-scope questions to
+the right one (one redirect per user per hour). Unsure cases stay silent
+rather than misrouting.
+
 ## Community
 
 - [OpenPak](https://openpak.org)

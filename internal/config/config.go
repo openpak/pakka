@@ -40,6 +40,26 @@ type Config struct {
 	DiscordGuilds []string
 	// DiscordPrefix is the command prefix.
 	DiscordPrefix string
+	// DiscordChannels gates command responses to these channel IDs (empty = all).
+	DiscordChannels []string
+	// DiscordOpsChannels gates reserved commands (empty = no restriction).
+	DiscordOpsChannels []string
+	// DiscordStatusChannel receives automatic outage alerts (empty = disabled).
+	DiscordStatusChannel string
+	// DiscordWelcomeChannel receives newcomer welcomes (empty = disabled).
+	DiscordWelcomeChannel string
+	// DiscordWelcomeInterval paces welcome passes.
+	DiscordWelcomeInterval time.Duration
+	// StatusTargetsRaw lists monitor targets as name=url pairs.
+	StatusTargetsRaw string
+	// StatusInterval paces monitor polls.
+	StatusInterval time.Duration
+	// SupportSetupChannel scopes setup questions (empty = routing disabled).
+	SupportSetupChannel string
+	// SupportConnectionChannel scopes connection questions.
+	SupportConnectionChannel string
+	// SupportBugChannel scopes bug reports.
+	SupportBugChannel string
 }
 
 func getenv(key, def string) string {
@@ -64,19 +84,29 @@ func getenvFirst(def string, keys ...string) string {
 func Load() Config {
 	loadDotEnv(".")
 	return Config{
-		Addr:             getenv("PAKKA_ADDR", "127.0.0.1:24800"),
-		DNSHost:          getenv("PAKKA_DNS_HOST", "localhost"),
-		TCPAddr:          os.Getenv("PAKKA_TCP_ADDR"),
-		HealthURL:        os.Getenv("PAKKA_HEALTH_URL"),
-		CheckTimeout:     getenvDuration("PAKKA_CHECK_TIMEOUT", 5*time.Second),
-		MaxRuns:          getenvInt("PAKKA_MAX_RUNS", 4),
-		MetaAPIKey:       getenvFirst("", "PAKKA_META_API_KEY", "META_API_KEY"),
-		MetaAPIBase:      getenvFirst("https://api.meta.ai/v1", "PAKKA_META_API_BASE", "META_API_BASE"),
-		MetaModel:        getenv("PAKKA_META_MODEL", "muse-spark-1.3-contributor"),
-		InvestigateSteps: getenvInt("PAKKA_INVESTIGATE_STEPS", 5),
-		DiscordToken:     os.Getenv("PAKKA_DISCORD_TOKEN"),
-		DiscordGuilds:    splitCSV(os.Getenv("PAKKA_DISCORD_GUILDS")),
-		DiscordPrefix:    getenv("PAKKA_DISCORD_PREFIX", "!pakka"),
+		Addr:                     getenv("PAKKA_ADDR", "127.0.0.1:24800"),
+		DNSHost:                  getenv("PAKKA_DNS_HOST", "localhost"),
+		TCPAddr:                  os.Getenv("PAKKA_TCP_ADDR"),
+		HealthURL:                os.Getenv("PAKKA_HEALTH_URL"),
+		CheckTimeout:             getenvDuration("PAKKA_CHECK_TIMEOUT", 5*time.Second),
+		MaxRuns:                  getenvInt("PAKKA_MAX_RUNS", 4),
+		MetaAPIKey:               getenvFirst("", "PAKKA_META_API_KEY", "META_API_KEY"),
+		MetaAPIBase:              getenvFirst("https://api.meta.ai/v1", "PAKKA_META_API_BASE", "META_API_BASE"),
+		MetaModel:                getenv("PAKKA_META_MODEL", "muse-spark-1.3-contributor"),
+		InvestigateSteps:         getenvInt("PAKKA_INVESTIGATE_STEPS", 5),
+		DiscordToken:             os.Getenv("PAKKA_DISCORD_TOKEN"),
+		DiscordGuilds:            splitCSV(os.Getenv("PAKKA_DISCORD_GUILDS")),
+		DiscordPrefix:            getenv("PAKKA_DISCORD_PREFIX", "!pakka"),
+		DiscordChannels:          splitCSV(os.Getenv("PAKKA_DISCORD_CHANNELS")),
+		DiscordOpsChannels:       splitCSV(os.Getenv("PAKKA_DISCORD_OPS_CHANNELS")),
+		DiscordStatusChannel:     os.Getenv("PAKKA_DISCORD_STATUS_CHANNEL"),
+		DiscordWelcomeChannel:    os.Getenv("PAKKA_DISCORD_WELCOME_CHANNEL"),
+		DiscordWelcomeInterval:   getenvDuration("PAKKA_DISCORD_WELCOME_INTERVAL", 15*time.Minute),
+		StatusTargetsRaw:         os.Getenv("PAKKA_STATUS_TARGETS"),
+		StatusInterval:           getenvDuration("PAKKA_STATUS_INTERVAL", time.Minute),
+		SupportSetupChannel:      os.Getenv("PAKKA_DISCORD_SETUP_CHANNEL"),
+		SupportConnectionChannel: os.Getenv("PAKKA_DISCORD_CONNECTION_CHANNEL"),
+		SupportBugChannel:        os.Getenv("PAKKA_DISCORD_BUG_CHANNEL"),
 	}
 }
 

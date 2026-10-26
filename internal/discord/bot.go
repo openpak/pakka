@@ -15,6 +15,7 @@ import (
 	"pakka/internal/config"
 	"pakka/internal/diagnostics"
 	"pakka/internal/investigate"
+	"pakka/internal/meta"
 )
 
 // maxMessage is Discord's message length limit.
@@ -42,28 +43,42 @@ type Bot struct {
 	model        investigate.Model // nil without API key; live investigate unavailable
 	prefix       string
 	guilds       map[string]bool // empty = all guilds
+	channels     map[string]bool // empty = all channels
+	ops          map[string]bool // empty = investigate unrestricted
+	router       *Router         // nil = support routing disabled
 	ownID        string
 	log          *slog.Logger
 }
 
-// New builds the bot (no network yet).
-func New(cfg config.Config, runner *diagnostics.Runner, inv *investigate.Investigator, model investigate.Model, log *slog.Logger) (*Bot, error) {
+// New builds the bot (no network yet). metaClient may be nil; support
+// routing then classifies by keywords alone.
+func New(cfg config.Config, runner *diagnostics.Runner, inv *investigate.Investigator, model investigate.Model, metaClient *meta.Client, log *slog.Logger) (*Bot, error) {
 	s, err := discordgo.New("Bot " + cfg.DiscordToken)
 	if err != nil {
 		return nil, err
 	}
-	s.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentsMessageContent
-	guilds := map[string]bool{}
-	for _, g := range cfg.DiscordGuilds {
-		guilds[g] = true
-	}
+	s.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentsMessageContent | discordgo.IntentsGuildMembers
 	b := &Bot{
 		session: s, runner: runner, investigator: inv, model: model,
-		prefix: cfg.DiscordPrefix, guilds: guilds, log: log,
+		prefix: cfg.DiscordPrefix, guilds: toSet(cfg.DiscordGuilds),
+		channels: toSet(cfg.DiscordChannels), ops: toSet(cfg.DiscordOpsChannels),
+		router: NewRouterFromConfig(cfg, metaClient),
+		log:    log,
 	}
 	s.AddHandler(b.onMessage)
 	return b, nil
 }
+
+func toSet(ids []string) map[string]bool {
+	out := map[string]bool{}
+	for _, id := range ids {
+		out[id] = true
+	}
+	return out
+}
+
+// Session exposes the gateway session for the monitor and welcomer senders.
+func (b *Bot) Session() *discordgo.Session { return b.session }
 
 // Start opens the gateway connection.
 func (b *Bot) Start() error {
@@ -105,7 +120,14 @@ func (b *Bot) Handle(ctx context.Context, sender Sender, in Incoming) {
 	if len(b.guilds) > 0 && !b.guilds[in.GuildID] {
 		return
 	}
+	if len(b.channels) > 0 && !b.channels[in.ChannelID] {
+		return
+	}
 	content := strings.TrimSpace(in.Content)
+	if msg, ok := b.route(in, content); ok {
+		b.reply(sender, in.ChannelID, msg)
+		return
+	}
 	if !strings.HasPrefix(content, b.prefix) {
 		return
 	}
@@ -123,18 +145,30 @@ func (b *Bot) Handle(ctx context.Context, sender Sender, in Incoming) {
 	case "run":
 		out = b.cmdRun(ctx, args[1:])
 	case "investigate":
-		out = b.cmdInvestigate(ctx, args[1:])
+		if len(b.ops) > 0 && !b.ops[in.ChannelID] {
+			out = "investigate is only available in ops channels"
+		} else {
+			out = b.cmdInvestigate(ctx, args[1:])
+		}
 	default:
 		out = fmt.Sprintf("unknown command %q (try `%s help`)", args[0], b.prefix)
 	}
 	b.reply(sender, in.ChannelID, out)
 }
 
+// route redirects out-of-scope support questions; false = handle normally.
+func (b *Bot) route(in Incoming, content string) (string, bool) {
+	if b.router == nil || strings.HasPrefix(content, b.prefix) {
+		return "", false
+	}
+	return b.router.Route(in)
+}
+
 func usage(prefix string) string {
 	return fmt.Sprintf("**Pakka** — connection diagnostics\n"+
 		"`%s run [scenario] [fixture|live]` — run checks (default: all-pass fixture)\n"+
-		"`%s investigate [fixture [scenario]|live] <symptoms>` — diagnose a problem\n"+
-		"scenarios: all-pass, local-misconfig, service-outage", prefix, prefix)
+		"`%s investigate [fixture [scenario]|live] <symptoms>` — diagnose a problem (ops channels only)",
+		prefix, prefix)
 }
 
 // cmdRun executes a diagnostic suite: `run [scenario] [fixture|live]`.

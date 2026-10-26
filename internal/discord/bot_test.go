@@ -32,6 +32,8 @@ func testBot() *Bot {
 		model:        nil,
 		prefix:       "!pakka",
 		guilds:       map[string]bool{},
+		channels:     map[string]bool{},
+		ops:          map[string]bool{},
 		log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 }
@@ -132,5 +134,49 @@ func TestTruncate(t *testing.T) {
 	}
 	if !strings.Contains(long, "truncated") {
 		t.Errorf("missing marker: %q", long[len(long)-20:])
+	}
+}
+
+func TestListenChannels(t *testing.T) {
+	b := testBot()
+	b.channels["c1"] = true
+	if posts := handle(t, b, incoming("!pakka help")); len(posts) != 1 {
+		t.Errorf("listed channel got %d replies", len(posts))
+	}
+	other := incoming("!pakka help")
+	other.ChannelID = "c2"
+	if posts := handle(t, b, other); len(posts) != 0 {
+		t.Errorf("unlisted channel got %d replies", len(posts))
+	}
+}
+
+func TestOpsRestriction(t *testing.T) {
+	b := testBot()
+	b.ops["ops1"] = true
+	if posts := handle(t, b, incoming("!pakka investigate live x")); len(posts) != 1 || !strings.Contains(posts[0], "ops channels") {
+		t.Errorf("non-ops investigate: %v", posts)
+	}
+	ops := incoming("!pakka investigate fixture all-pass x")
+	ops.ChannelID = "ops1"
+	if posts := handle(t, b, ops); len(posts) != 1 || !strings.Contains(posts[0], "healthy") {
+		t.Errorf("ops investigate: %v", posts)
+	}
+	if posts := handle(t, b, incoming("!pakka run all-pass")); len(posts) != 1 || !strings.Contains(posts[0], "**run**") {
+		t.Errorf("run should stay public: %v", posts)
+	}
+}
+
+func TestRouterWiring(t *testing.T) {
+	b := testBot()
+	b.router = NewRouter(keywordClassifier{}, "setup1", "conn1", "bug1", time.Hour)
+	msg := incoming("cannot connect to lobby at all")
+	msg.ChannelID = "setup1"
+	if posts := handle(t, b, msg); len(posts) != 1 || !strings.Contains(posts[0], "<#conn1>") {
+		t.Errorf("support redirect: %v", posts)
+	}
+	cmd := incoming("!pakka run all-pass")
+	cmd.ChannelID = "setup1"
+	if posts := handle(t, b, cmd); len(posts) != 1 || !strings.Contains(posts[0], "**run**") {
+		t.Errorf("command in support channel: %v", posts)
 	}
 }
