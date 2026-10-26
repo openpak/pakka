@@ -50,6 +50,12 @@ Commits `237617b`–`e0924da` (2026-10-26 16:59–18:06 UTC) are event-time plan
   Deployed on draughts-server as quadlet `openpak-pakka` (localhost-only
   24800, auto-update on :latest). Validation: service active, /healthz ok,
   fixture investigation ok. Live model calls still await the Meta API key.
+- 2026-10-26: first live model investigation — restarted with the Meta API
+  key; `POST /v1/investigations` (mode live) returned a validated finding
+  (insufficient-evidence, correctly, with TCP/health targets unconfigured;
+  evidence cites only the executed dns.resolve check). Proves the client,
+  loop, and validation against real api.meta.ai. Full local-vs-outage
+  distinction still needs real targets configured.
 
 ## Publication
 
