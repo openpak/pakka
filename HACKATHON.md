@@ -122,6 +122,21 @@ Commits `237617b`–`e0924da` (2026-10-26 16:59–18:06 UTC) are event-time plan
   `org.opencontainers.image.source` label to the Dockerfile; the v0.5.4
   publish linked the package to openpak/pakka (verified via API; stays
   private like sibling packages). Both hosts on v0.5.4, /healthz ok.
+- 2026-10-26: gateway intent outage — the bot never answered anything
+  because Message Content + Server Members intents were off in the portal:
+  Discord closed the gateway with 4014 in a silent loop (discordgo hides
+  close warnings at its default log level; the token got reset after 1000+
+  connects). Fix: both intents on, token rotated on both hosts, v0.5.5
+  surfaces gateway warnings in logs. Verified live: commands + support
+  routing answer; the user's `@pakka` used the Pakka *role* mention, so
+  v0.5.6 answers the bot's own role mention too (verified against its
+  roles; other roles stay silent).
+- 2026-10-26: moderator agent (v0.6.0) — `@pakka <question>` talks to the
+  model with tools: live diagnostics, service status snapshot, recent log
+  alerts (50-deep history), and post_notice to staff channels only,
+  redacted. Monitor states are mutex-guarded for agent reads. Also fixed
+  the mobile-app finding: live `/v1/runs` without scenario now labels
+  itself `live` instead of `all-pass`. Both hosts on v0.6.0, /healthz ok.
 
 ## Publication
 
