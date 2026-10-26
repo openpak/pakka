@@ -56,6 +56,11 @@ Commits `237617b`–`e0924da` (2026-10-26 16:59–18:06 UTC) are event-time plan
   evidence cites only the executed dns.resolve check). Proves the client,
   loop, and validation against real api.meta.ai. Full local-vs-outage
   distinction still needs real targets configured.
+- 2026-10-26: Discord adapter — bot serves `!pakka run` and
+  `!pakka investigate` from the shared in-process core (discordgo,
+  guild allowlist, 2000-char replies, Message Content intent).
+  Validation: unit tests (fake sender, fixture core) green with vet/gofmt;
+  live gateway check pending deploy plus bot token.
 
 ## Publication
 
