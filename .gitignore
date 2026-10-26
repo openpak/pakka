@@ -1,0 +1,15 @@
+# Local credentials and configuration
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Diagnostics and scratch
+scratch/
+logs/
+*.log
+
+# Build output
+build/
+dist/
