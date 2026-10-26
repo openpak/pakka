@@ -73,6 +73,13 @@ Commits `237617b`–`e0924da` (2026-10-26 16:59–18:06 UTC) are event-time plan
   /healthz ok, discord connected, status monitor + welcomer started
   (status + welcome channels wired). Support routing and ops gating await
   their channel IDs.
+- 2026-10-26: journal log watching — host shippers post journal JSON to
+  `POST /v1/log-events`; Pakka filters by unit glob and announces
+  warning+ to the ops-alerts channel and moderation signals to the
+  moderation-log channel (30-minute cooldown per message, host-tagged for
+  the draughts + Raspi ZeroTier pair). Commit
+  `36838350377dc56eb1ff45953769ad8c6c2a40d0`. Validation: unit tests
+  green with vet/gofmt. Deploy + shippers pending release.
 
 ## Publication
 
