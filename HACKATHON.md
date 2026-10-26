@@ -37,6 +37,13 @@ Commits `237617b`–`e0924da` (2026-10-26 16:59–18:06 UTC) are event-time plan
   `26102cde8f622ba7602f7632ae783d3739437ae8`. Validation: gofmt/vet/test
   green; live smoke of fixture investigation and no-key 503. Live model
   call not yet tested (awaiting API key).
+- 2026-10-26: container packaging — fixed Dockerfile for the stdlib-only
+  build, added .dockerignore (keeps .env and .git out of the image), mirrored
+  the tag-release workflow (multi-arch ghcr publish). Built and pushed
+  `ghcr.io/openpak/pakka:bbda721` and `:latest` (amd64, local podman build).
+  Validation: container smoke test (/healthz ok, fixture investigation ok),
+  runs as uid 65532, /app holds only the binary. Commit
+  `bbda721c88793e4c9fe4d4a432dab51feee35513`.
 
 ## Publication
 
