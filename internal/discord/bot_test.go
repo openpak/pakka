@@ -237,6 +237,24 @@ func TestNewSurfacesGatewayWarnings(t *testing.T) {
 	}
 }
 
+func TestMentionOwnRole(t *testing.T) {
+	b := testBot()
+	b.ownID = "999"
+	b.roleLookup = func(guildID string) ([]string, error) { return []string{"pakkarole"}, nil }
+	if posts := handle(t, b, incoming("<@&pakkarole> help")); len(posts) != 1 {
+		t.Errorf("own-role mention got %d replies", len(posts))
+	}
+	if posts := handle(t, b, incoming("<@&otherrole> help")); len(posts) != 0 {
+		t.Errorf("foreign-role mention got %d replies", len(posts))
+	}
+	// Without a lookup, role mentions never match.
+	b2 := testBot()
+	b2.ownID = "999"
+	if posts := handle(t, b2, incoming("<@&pakkarole> help")); len(posts) != 0 {
+		t.Errorf("unverifiable role mention got %d replies", len(posts))
+	}
+}
+
 func TestMentionOwnerBypass(t *testing.T) {
 	b := testBot()
 	b.ownID = "999"

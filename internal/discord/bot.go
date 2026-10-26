@@ -51,6 +51,9 @@ type Bot struct {
 	ownerLookup  func(guildID string) (string, error)
 	ownerCache   map[string]string // guild ID -> owner user ID
 	ownerMu      sync.Mutex
+	roleLookup   func(guildID string) ([]string, error)
+	ownRoles     map[string]map[string]bool // guild ID -> bot's role IDs
+	roleMu       sync.Mutex
 	router       *Router // nil = support routing disabled
 	ownID        string
 	redactExtra  []string // internal endpoints/hostnames, never posted to chat
@@ -87,6 +90,13 @@ func New(cfg config.Config, runner *diagnostics.Runner, inv *investigate.Investi
 			return "", err
 		}
 		return g.OwnerID, nil
+	}
+	b.roleLookup = func(guildID string) ([]string, error) {
+		m, err := s.GuildMember(guildID, b.ownID)
+		if err != nil {
+			return nil, err
+		}
+		return m.Roles, nil
 	}
 	s.AddHandler(b.onMessage)
 	return b, nil
@@ -132,6 +142,31 @@ func (b *Bot) isOwner(guildID, authorID string) bool {
 		b.ownerMu.Unlock()
 	}
 	return owner == authorID
+}
+
+// hasOwnRole reports whether roleID is one of the bot's roles in the guild,
+// caching one REST lookup per guild. False without a lookup or on failure.
+func (b *Bot) hasOwnRole(guildID, roleID string) bool {
+	if b.roleLookup == nil || guildID == "" || roleID == "" {
+		return false
+	}
+	b.roleMu.Lock()
+	if b.ownRoles == nil {
+		b.ownRoles = map[string]map[string]bool{}
+	}
+	roles, ok := b.ownRoles[guildID]
+	b.roleMu.Unlock()
+	if !ok {
+		list, err := b.roleLookup(guildID)
+		if err != nil {
+			return false
+		}
+		roles = toSet(list)
+		b.roleMu.Lock()
+		b.ownRoles[guildID] = roles
+		b.roleMu.Unlock()
+	}
+	return roles[roleID]
 }
 
 // Session exposes the gateway session for the monitor and welcomer senders.
@@ -194,8 +229,8 @@ func (b *Bot) Handle(ctx context.Context, sender Sender, in Incoming) {
 		return
 	}
 	content := strings.TrimSpace(in.Content)
-	if rest, ok := b.stripMention(content); ok {
-		b.handleMention(ctx, sender, in, rest)
+	if rest, roleID, ok := b.stripMention(content); ok {
+		b.handleMention(ctx, sender, in, rest, roleID)
 		return
 	}
 	if msg, ok := b.route(in, content); ok {
@@ -228,21 +263,31 @@ func (b *Bot) Handle(ctx context.Context, sender Sender, in Incoming) {
 }
 
 // stripMention removes a leading @pakka mention; ok=false when absent.
-func (b *Bot) stripMention(content string) (rest string, ok bool) {
+// roleID is set for role mentions (<@&id>), which handleMention verifies
+// against the bot's own roles — anyone else's role mention is not ours.
+func (b *Bot) stripMention(content string) (rest, roleID string, ok bool) {
 	if b.ownID == "" {
-		return "", false
+		return "", "", false
 	}
 	for _, prefix := range []string{"<@" + b.ownID + ">", "<@!" + b.ownID + ">"} {
 		if r, found := strings.CutPrefix(content, prefix); found {
-			return strings.TrimSpace(r), true
+			return strings.TrimSpace(r), "", true
 		}
 	}
-	return "", false
+	if r, found := strings.CutPrefix(content, "<@&"); found {
+		if id, tail, ok := strings.Cut(r, ">"); ok && id != "" {
+			return strings.TrimSpace(tail), id, true
+		}
+	}
+	return "", "", false
 }
 
 // handleMention answers a direct @pakka address: known commands run as-is,
 // anything else becomes a live investigation of the message text.
-func (b *Bot) handleMention(ctx context.Context, sender Sender, in Incoming, rest string) {
+func (b *Bot) handleMention(ctx context.Context, sender Sender, in Incoming, rest, roleID string) {
+	if roleID != "" && !b.hasOwnRole(in.GuildID, roleID) {
+		return
+	}
 	if len(b.channels) > 0 && !b.channels[in.ChannelID] {
 		return
 	}
