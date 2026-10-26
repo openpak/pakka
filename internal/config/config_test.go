@@ -19,7 +19,7 @@ func clearEnv(t *testing.T) {
 		"PAKKA_DISCORD_SETUP_CHANNEL", "PAKKA_DISCORD_CONNECTION_CHANNEL",
 		"PAKKA_DISCORD_BUG_CHANNEL",
 		"PAKKA_DISCORD_MODLOG_CHANNEL", "PAKKA_DISCORD_OPS_ALERTS_CHANNEL",
-		"PAKKA_LOG_WATCH_UNITS",
+		"PAKKA_LOG_WATCH_UNITS", "PAKKA_DISCORD_GATEWAY",
 	} {
 		t.Setenv(key, "")
 	}
@@ -54,6 +54,19 @@ func TestDefaults(t *testing.T) {
 	}
 	if cfg.InvestigateSteps != 5 {
 		t.Errorf("InvestigateSteps = %d", cfg.InvestigateSteps)
+	}
+	if !cfg.DiscordGateway {
+		t.Error("DiscordGateway should default true")
+	}
+}
+
+func TestGatewayFlag(t *testing.T) {
+	clearEnv(t)
+	for value, want := range map[string]bool{"false": false, "0": false, "no": false, "true": true, "1": true, "bogus": true} {
+		t.Setenv("PAKKA_DISCORD_GATEWAY", value)
+		if got := Load().DiscordGateway; got != want {
+			t.Errorf("%q -> %v, want %v", value, got, want)
+		}
 	}
 }
 

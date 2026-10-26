@@ -40,6 +40,8 @@ type Config struct {
 	DiscordGuilds []string
 	// DiscordPrefix is the command prefix.
 	DiscordPrefix string
+	// DiscordGateway opens the gateway connection (false = REST-only alerts).
+	DiscordGateway bool
 	// DiscordChannels gates command responses to these channel IDs (empty = all).
 	DiscordChannels []string
 	// DiscordOpsChannels gates reserved commands (empty = no restriction).
@@ -103,6 +105,7 @@ func Load() Config {
 		DiscordToken:             os.Getenv("PAKKA_DISCORD_TOKEN"),
 		DiscordGuilds:            splitCSV(os.Getenv("PAKKA_DISCORD_GUILDS")),
 		DiscordPrefix:            getenv("PAKKA_DISCORD_PREFIX", "!pakka"),
+		DiscordGateway:           getenvBool("PAKKA_DISCORD_GATEWAY", true),
 		DiscordChannels:          splitCSV(os.Getenv("PAKKA_DISCORD_CHANNELS")),
 		DiscordOpsChannels:       splitCSV(os.Getenv("PAKKA_DISCORD_OPS_CHANNELS")),
 		DiscordStatusChannel:     os.Getenv("PAKKA_DISCORD_STATUS_CHANNEL"),
@@ -134,6 +137,18 @@ func splitCSVDefault(v, def string) []string {
 		return out
 	}
 	return splitCSV(def)
+}
+
+func getenvBool(key string, def bool) bool {
+	if v := os.Getenv(key); v != "" {
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "1", "true", "yes", "on":
+			return true
+		case "0", "false", "no", "off":
+			return false
+		}
+	}
+	return def
 }
 
 func getenvDuration(key string, def time.Duration) time.Duration {

@@ -116,6 +116,12 @@ moderation signals to `PAKKA_DISCORD_MODLOG_CHANNEL`, with a 30-minute
 cooldown per distinct message. The ingest endpoint is reachable only over
 localhost and the private ZeroTier network — never expose it publicly.
 
+Multi-host alerts: additional hosts run the same image with
+`PAKKA_DISCORD_GATEWAY=false` (REST-only, no second gateway session) plus a
+local shipper posting to their own localhost ingest. Each instance announces
+with its own hostname; run the status monitor and welcomer on one host only
+to avoid duplicates.
+
 ## Community
 
 - [OpenPak](https://openpak.org)

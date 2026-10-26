@@ -56,12 +56,16 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		if err := b.Start(); err != nil {
-			return fmt.Errorf("discord: %w", err)
+		if cfg.DiscordGateway {
+			if err := b.Start(); err != nil {
+				return fmt.Errorf("discord: %w", err)
+			}
+			defer bot.Stop()
+			log.Info("discord connected")
+		} else {
+			log.Info("discord gateway disabled: REST-only alerts mode")
 		}
 		bot = b
-		defer bot.Stop()
-		log.Info("discord connected")
 		startMonitor(ctx, cfg, b, log)
 		startWelcomer(ctx, cfg, b, log)
 	} else {
