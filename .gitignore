@@ -13,3 +13,4 @@ logs/
 # Build output
 build/
 dist/
+/pakka

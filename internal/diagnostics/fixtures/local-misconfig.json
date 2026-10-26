@@ -1,0 +1,9 @@
+{
+  "schema": "pakka.fixture/v0",
+  "scenario": "local-misconfig",
+  "results": [
+    {"check_id": "dns.resolve", "outcome": "fail", "summary": "synthetic: host resolves outside OpenPak; wrong environment suspected", "evidence": {"host": "example.invalid", "addrs": ["198.51.100.7"]}, "duration_ms": 2},
+    {"check_id": "tcp.connect", "outcome": "fail", "summary": "synthetic: connection refused on OpenPak endpoint", "evidence": {"addr": "192.0.2.1:443"}, "duration_ms": 3},
+    {"check_id": "http.health", "outcome": "skipped", "summary": "synthetic: no healthy endpoint to probe", "evidence": {}, "duration_ms": 0}
+  ]
+}

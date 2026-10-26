@@ -1,0 +1,9 @@
+{
+  "schema": "pakka.fixture/v0",
+  "scenario": "service-outage",
+  "results": [
+    {"check_id": "dns.resolve", "outcome": "pass", "summary": "synthetic: resolve ok", "evidence": {"host": "example.invalid", "addrs": ["192.0.2.1"]}, "duration_ms": 2},
+    {"check_id": "tcp.connect", "outcome": "pass", "summary": "synthetic: connect ok", "evidence": {"addr": "192.0.2.1:443"}, "duration_ms": 3},
+    {"check_id": "http.health", "outcome": "fail", "summary": "synthetic: 503 from health endpoint; service outage suspected", "evidence": {"url": "https://example.invalid/health", "status": 503}, "duration_ms": 5}
+  ]
+}

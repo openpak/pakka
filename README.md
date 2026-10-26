@@ -35,7 +35,27 @@ One supported platform, one reproducible connection failure, one reversible repa
 
 ## Development
 
-This repository currently contains documentation only. Go is the selected runtime language. Dependency versions, model ID and deployment configuration will be selected during implementation. There are no build or run commands yet.
+Go 1.26+, standard library only (no external dependencies). The repo builds
+standalone; the workspace `go.work` is ignored:
+
+```sh
+GOWORK=off go build ./...
+GOWORK=off go vet ./...
+GOWORK=off go test -count=1 ./...
+gofmt -l .
+```
+
+Run the harness (listens on `127.0.0.1:24800` by default):
+
+```sh
+GOWORK=off go run .
+curl localhost:24800/healthz
+curl -X POST localhost:24800/v1/runs -d '{"mode":"fixture","scenario":"local-misconfig"}'
+```
+
+Configuration is environment-only: `PAKKA_ADDR`, `PAKKA_DNS_HOST`,
+`PAKKA_TCP_ADDR`, `PAKKA_HEALTH_URL`, `PAKKA_CHECK_TIMEOUT`, `PAKKA_MAX_RUNS`.
+Live-check targets come only from the environment, never from requests.
 
 Never commit credentials, player logs, account data or private research. Use synthetic diagnostic fixtures in public examples.
 

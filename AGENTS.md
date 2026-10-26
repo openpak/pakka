@@ -10,4 +10,4 @@
 - Do not send messages to players or publish issues/patches without authorization.
 - Use supported OpenPak emulator forks; Harbor is the current Switch target.
 - Do not write to /tmp. In the OpenPak workspace, use workspace scratch/tmp for throwaway work; outside it, use a local ignored scratch directory.
-- No runtime or deployment is currently implemented. Do not invent build instructions.
+- Runtime: Go harness (`main.go`, `internal/`). Build and test with `GOWORK=off` (the repo builds standalone; workspace `go.work` is ignored). See README. No deployment is implemented yet.
