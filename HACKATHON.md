@@ -68,6 +68,11 @@ Commits `237617b`–`e0924da` (2026-10-26 16:59–18:06 UTC) are event-time plan
   15-minute newcomer welcomer. Commit
   `627a135e174273b6144e56cdbb03d7b5a80da71f`. Validation: unit tests
   green with vet/gofmt. Live check pending channel IDs + deploy.
+- 2026-10-26: release v0.3.0, Discord automation live — tag `v0.3.0`,
+  multi-arch publish, server auto-updated. Verified: service active,
+  /healthz ok, discord connected, status monitor + welcomer started
+  (status + welcome channels wired). Support routing and ops gating await
+  their channel IDs.
 
 ## Publication
 
