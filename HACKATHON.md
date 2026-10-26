@@ -6,14 +6,15 @@ OpenPak's accounts, social network, services, game servers, clients and emulator
 
 ## Repository preparation
 
-The initial repository commit contains planning, licensing and contributor documentation only. It does not implement an assistant. Record its exact SHA below after creation; a Git tag `preparation-baseline` identifies this preparation snapshot.
+The initial repository commit contains planning, licensing and contributor documentation only. It does not implement an assistant. Preparation SHA: `441603f23f79f60b99ee01733934480b231dd8c1`, tagged `preparation-baseline`.
 
 ## Event boundary
 
-Event start and end: not yet recorded.
-Implementation-start baseline: not yet recorded.
+- Event start: 2026-10-26 16:00 UTC (owner-confirmed).
+- Event end: not yet recorded.
+- Implementation-start baseline: `441603f` — HEAD at the official start. It coincides with the `preparation-baseline` tag, so no intervening work falls between preparation and event start.
 
-The preparation tag is not automatically the event-start baseline. Record the actual commit at the official start and disclose any intervening work. Do not backdate commits or describe pre-event work as event-built.
+Commits `237617b`–`e0924da` (2026-10-26 16:59–18:06 UTC) are event-time planning docs, not pre-event work. Do not backdate commits or describe pre-event work as event-built.
 
 ## Event-built work
 
