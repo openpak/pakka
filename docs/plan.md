@@ -12,6 +12,10 @@ Prepare container packaging, CI, health/readiness checks, graceful shutdown, red
 
 Console clients and peer-agent sessions depend on this foundation. They are subsequent integrations, not prerequisites for the first running harness.
 
+## Console integration follows verified deployment
+
+After the Go harness is deployed and its service, Discord, website and app integrations are verified, work on console apps and patches that communicate with it. Reuse the shared session API, identity and permission model; add platform-specific diagnostics and supported actions through adapters. Select targets based on available hardware and toolchains, and verify each independently. Console work is not a prerequisite for harness deployment.
+
 ## Milestone 1: evidence
 
 Choose a platform based on available hardware and toolchains. Reproduce one local configuration failure and one service outage. Identify existing diagnostic surfaces without assuming every console exposes the same capabilities. Specify a minimal evidence schema and synthetic fixtures.
