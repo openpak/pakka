@@ -9,6 +9,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/app .
 
 FROM alpine:3.20
+LABEL org.opencontainers.image.source=https://github.com/openpak/pakka
 RUN apk add --no-cache ca-certificates tzdata \
  && adduser -D -u 65532 -h /app app
 WORKDIR /app
