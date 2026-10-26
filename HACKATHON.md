@@ -61,6 +61,13 @@ Commits `237617b`–`e0924da` (2026-10-26 16:59–18:06 UTC) are event-time plan
   guild allowlist, 2000-char replies, Message Content intent).
   Validation: unit tests (fake sender, fixture core) green with vet/gofmt;
   live gateway check pending deploy plus bot token.
+- 2026-10-26: Discord automation batch — per-command channel gating
+  (investigate ops-only), model-based support routing across setup-help /
+  connection-help / bug-reports (model first, keywords on API failure,
+  hourly per-user cooldown), outage monitor with status-channel alerts,
+  15-minute newcomer welcomer. Commit
+  `627a135e174273b6144e56cdbb03d7b5a80da71f`. Validation: unit tests
+  green with vet/gofmt. Live check pending channel IDs + deploy.
 
 ## Publication
 
