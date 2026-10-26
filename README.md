@@ -28,6 +28,7 @@ One supported platform, one reproducible connection failure, one reversible repa
 
 - [Architecture](docs/architecture.md)
 - [Implementation plan](docs/plan.md)
+- [M1 evidence proposal](docs/m1-proposal.md)
 - [Hackathon contribution record](HACKATHON.md)
 - [Contributing](CONTRIBUTING.md)
 - [Agent instructions](AGENTS.md)
