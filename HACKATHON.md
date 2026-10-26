@@ -85,6 +85,13 @@ Commits `237617b`–`e0924da` (2026-10-26 16:59–18:06 UTC) are event-time plan
   Verified: service active, /healthz ok, log watcher started, synthetic ops
   + moderation test events accepted (202). Journal shipper installed on
   draughts; Raspi excluded (not infra) — second monitored server TBD.
+- 2026-10-26: REST-only alerts mode for second-site instances — quilted-waffle
+  identified as the main host, but its ZeroTier path to draughts is down
+  (fast refusal, firewall suspected; no root to fix). Second hosts now run
+  the same image with `PAKKA_DISCORD_GATEWAY=false`, posting alerts via
+  Discord REST with no cross-host dependency. Commit
+  `5ab8775f6977581760f0373cccd5628460ab87eb`. Validation: unit tests green
+  with vet/gofmt. Quilted-waffle deploy pending release.
 
 ## Publication
 
