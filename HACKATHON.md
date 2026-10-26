@@ -45,6 +45,11 @@ Commits `237617b`–`e0924da` (2026-10-26 16:59–18:06 UTC) are event-time plan
   runs as uid 65532, /app holds only the binary. Commit
   `bbda721c88793e4c9fe4d4a432dab51feee35513`. Release workflow validated
   with a dry-run dispatch (amd64+arm64 builds success, publish skipped).
+- 2026-10-26: release v0.1.0 and first deploy — tag `v0.1.0`, release workflow
+  published multi-arch `ghcr.io/openpak/pakka:0.1.0`, `:0.1`, `:latest`.
+  Deployed on draughts-server as quadlet `openpak-pakka` (localhost-only
+  24800, auto-update on :latest). Validation: service active, /healthz ok,
+  fixture investigation ok. Live model calls still await the Meta API key.
 
 ## Publication
 
