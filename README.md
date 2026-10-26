@@ -14,6 +14,12 @@ Players will also be able to invite their own AI agent into a shared troubleshoo
 
 For maintainers, Pakka will combine network health signals, player feedback and consented diagnostic results to identify recurring problems, prepare bug reports and propose fixes for human review.
 
+## Initial foundation: server-side Go harness
+
+Pakka starts as a Go agent harness deployed on an OpenPak server. It will connect Meta model reasoning to a registered tool set for OpenPak services, with Discord, website and app adapters sharing the same session and authorization layer. Model credentials stay on the server.
+
+The first vertical slice is a request from one entry point, an authorized read-only service check, and an evidence-backed response. Implement the website/app API and Discord entry points around the same core rather than separate agents. Console clients and personal-agent collaboration follow this foundation.
+
 ## First milestone
 
 One supported platform, one reproducible connection failure, one reversible repair and a verified retest. Include a service outage scenario where Pakka correctly avoids unnecessary local changes. Broader console support follows working evidence rather than a blanket compatibility claim.

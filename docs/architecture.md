@@ -2,6 +2,14 @@
 
 This is a design, not a description of deployed functionality.
 
+## Go harness foundation
+
+The initial runtime will be a server-side Go service. Keep the agent loop, model adapter, session store, permissions and service tool registry separate from transport adapters. Discord, the website and the app use the same core, with authenticated identity mapping and authorization enforced independently of model output.
+
+Start service integration with allowlisted read-only tools and short-lived request context. Add mutations only with explicitly scoped permission, audit records and rollback where supported. Do not equate Discord identity with an OpenPak account without a verified link.
+
+Deploy as an independently built container, following existing OpenPak service conventions after confirming current deployment requirements. Include health/readiness, graceful shutdown, bounded concurrency, request timeouts, structured redacted logs and server-only secret injection. No deployment has been implemented yet.
+
 ## Components
 
 1. Entry adapters: console interfaces and, later, community integrations start a support session.

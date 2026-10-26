@@ -4,6 +4,14 @@
 
 Create the public project, document scope and record existing OpenPak dependencies. Do not present this preparation as event-built functionality. Confirm event dates and eligibility boundaries before implementation.
 
+## Foundation: Go harness and server deployment
+
+Build the shared Go runtime first: Meta adapter, bounded agent loop, session handling, authorization and registered service tools. Expose an authenticated conversation API shared by the website and app, and add a Discord adapter using the same runtime. Choose the first entry point for an end-to-end read-only service check before expanding surfaces.
+
+Prepare container packaging, CI, health/readiness checks, graceful shutdown, redacted logs and configuration documentation. Validate locally before a separately authorized server deployment. Confirm account linking and per-tool permissions for every entry point.
+
+Console clients and peer-agent sessions depend on this foundation. They are subsequent integrations, not prerequisites for the first running harness.
+
 ## Milestone 1: evidence
 
 Choose a platform based on available hardware and toolchains. Reproduce one local configuration failure and one service outage. Identify existing diagnostic surfaces without assuming every console exposes the same capabilities. Specify a minimal evidence schema and synthetic fixtures.
