@@ -47,6 +47,7 @@ type Bot struct {
 	ops          map[string]bool // empty = investigate unrestricted
 	router       *Router         // nil = support routing disabled
 	ownID        string
+	redactExtra  []string // internal endpoints/hostnames, never posted to chat
 	log          *slog.Logger
 }
 
@@ -62,8 +63,9 @@ func New(cfg config.Config, runner *diagnostics.Runner, inv *investigate.Investi
 		session: s, runner: runner, investigator: inv, model: model,
 		prefix: cfg.DiscordPrefix, guilds: toSet(cfg.DiscordGuilds),
 		channels: toSet(cfg.DiscordChannels), ops: toSet(cfg.DiscordOpsChannels),
-		router: NewRouterFromConfig(cfg, metaClient),
-		log:    log,
+		router:      NewRouterFromConfig(cfg, metaClient),
+		redactExtra: RedactExtras(cfg),
+		log:         log,
 	}
 	s.AddHandler(b.onMessage)
 	return b, nil
@@ -120,10 +122,11 @@ func (b *Bot) Handle(ctx context.Context, sender Sender, in Incoming) {
 	if len(b.guilds) > 0 && !b.guilds[in.GuildID] {
 		return
 	}
-	if len(b.channels) > 0 && !b.channels[in.ChannelID] {
+	content := strings.TrimSpace(in.Content)
+	if rest, ok := b.stripMention(content); ok {
+		b.handleMention(ctx, sender, in, rest)
 		return
 	}
-	content := strings.TrimSpace(in.Content)
 	if msg, ok := b.route(in, content); ok {
 		b.reply(sender, in.ChannelID, msg)
 		return
@@ -131,11 +134,53 @@ func (b *Bot) Handle(ctx context.Context, sender Sender, in Incoming) {
 	if !strings.HasPrefix(content, b.prefix) {
 		return
 	}
+	// Command channels gate prefixed commands only; support routing above
+	// stays independent so it keeps working in its own channels.
+	if len(b.channels) > 0 && !b.channels[in.ChannelID] {
+		return
+	}
 	args := strings.Fields(strings.TrimSpace(strings.TrimPrefix(content, b.prefix)))
 	if len(args) == 0 {
 		b.reply(sender, in.ChannelID, usage(b.prefix))
 		return
 	}
+	b.runCommand(ctx, sender, in, args)
+}
+
+// stripMention removes a leading @pakka mention; ok=false when absent.
+func (b *Bot) stripMention(content string) (rest string, ok bool) {
+	if b.ownID == "" {
+		return "", false
+	}
+	for _, prefix := range []string{"<@" + b.ownID + ">", "<@!" + b.ownID + ">"} {
+		if r, found := strings.CutPrefix(content, prefix); found {
+			return strings.TrimSpace(r), true
+		}
+	}
+	return "", false
+}
+
+// handleMention answers a direct @pakka address: known commands run as-is,
+// anything else becomes a live investigation of the message text.
+func (b *Bot) handleMention(ctx context.Context, sender Sender, in Incoming, rest string) {
+	if len(b.channels) > 0 && !b.channels[in.ChannelID] {
+		return
+	}
+	args := strings.Fields(rest)
+	if len(args) == 0 {
+		b.reply(sender, in.ChannelID, usage(b.prefix))
+		return
+	}
+	switch args[0] {
+	case "help", "run", "investigate":
+		b.runCommand(ctx, sender, in, args)
+	default:
+		b.runCommand(ctx, sender, in, append([]string{"investigate", "live"}, args...))
+	}
+}
+
+// runCommand dispatches one parsed command and replies.
+func (b *Bot) runCommand(ctx context.Context, sender Sender, in Incoming, args []string) {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 	var out string
@@ -243,9 +288,16 @@ func (b *Bot) cmdInvestigate(ctx context.Context, args []string) string {
 }
 
 func (b *Bot) reply(sender Sender, channelID, content string) {
-	if _, err := sender.ChannelMessageSend(channelID, truncate(content), discordgo.WithContext(context.Background())); err != nil {
+	content = truncate(RedactWith(content, b.redactExtra))
+	if _, err := sender.ChannelMessageSend(channelID, content, discordgo.WithContext(context.Background())); err != nil {
 		b.log.Error("discord reply failed", "err", err)
 	}
+}
+
+// RedactingSender wraps the session so monitor, welcomer, and log-watcher
+// announcements are redacted before send.
+func (b *Bot) RedactingSender() Sender {
+	return Redacting(b.session, b.redactExtra...)
 }
 
 // truncate caps output at Discord's message limit (rune-safe).

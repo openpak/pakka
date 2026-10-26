@@ -75,7 +75,7 @@ func run() error {
 	if bot != nil && (cfg.LogModChannel != "" || cfg.LogOpsChannel != "") {
 		watcher = discord.NewLogWatcher(cfg.LogWatchUnits,
 			cfg.LogModChannel, cfg.LogOpsChannel,
-			discord.SenderAnnouncer{Sender: bot.Session()}, 30*time.Minute, log)
+			discord.SenderAnnouncer{Sender: bot.RedactingSender()}, 30*time.Minute, log)
 		log.Info("log watcher started")
 	} else {
 		log.Info("log watcher disabled: needs bot plus alert channels")
@@ -126,7 +126,7 @@ func startMonitor(ctx context.Context, cfg config.Config, b *discord.Bot, log *s
 	}
 	mon := discord.NewMonitor(targets, cfg.StatusInterval,
 		discord.NewNetProber(cfg.CheckTimeout),
-		discord.SenderAnnouncer{Sender: b.Session()},
+		discord.SenderAnnouncer{Sender: b.RedactingSender()},
 		cfg.DiscordStatusChannel, log)
 	go mon.Run(ctx)
 	log.Info("status monitor started", "targets", len(targets))
@@ -145,7 +145,7 @@ func startWelcomer(ctx context.Context, cfg config.Config, b *discord.Bot, log *
 	}
 	w := discord.NewWelcomer(
 		discord.NewGuildLister(b.Session(), ch.GuildID),
-		b.Session(), cfg.DiscordWelcomeChannel,
+		b.RedactingSender(), cfg.DiscordWelcomeChannel,
 		cfg.DiscordWelcomeInterval, cfg.DiscordPrefix, log)
 	go w.Run(ctx)
 	log.Info("welcomer started", "guild", ch.GuildID)
