@@ -43,7 +43,8 @@ Commits `237617b`–`e0924da` (2026-10-26 16:59–18:06 UTC) are event-time plan
   `ghcr.io/openpak/pakka:bbda721` and `:latest` (amd64, local podman build).
   Validation: container smoke test (/healthz ok, fixture investigation ok),
   runs as uid 65532, /app holds only the binary. Commit
-  `bbda721c88793e4c9fe4d4a432dab51feee35513`.
+  `bbda721c88793e4c9fe4d4a432dab51feee35513`. Release workflow validated
+  with a dry-run dispatch (amd64+arm64 builds success, publish skipped).
 
 ## Publication
 
