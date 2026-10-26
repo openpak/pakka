@@ -29,6 +29,14 @@ Commits `237617b`–`e0924da` (2026-10-26 16:59–18:06 UTC) are event-time plan
   DNS `openpak.org` (pass, 4 addrs), TCP `127.0.0.1:1` (fail, refused), unset
   health URL (skipped); normalized outcomes byte-identical across runs.
   No code change.
+- 2026-10-26: M2 Meta investigation — `api.meta.ai` chat-completions client
+  (default model `muse-spark-1.3-contributor`), allowlisted tool registry
+  (dns/tcp/http, no model-supplied targets), bounded loop with validated
+  evidence-backed findings and insufficient-evidence downgrade, fixture
+  scripts, `POST /v1/investigations`, `.env` support. Commit
+  `26102cde8f622ba7602f7632ae783d3739437ae8`. Validation: gofmt/vet/test
+  green; live smoke of fixture investigation and no-key 503. Live model
+  call not yet tested (awaiting API key).
 
 ## Publication
 
