@@ -1,0 +1,227 @@
+// Package discord connects a Discord bot to the shared harness core:
+// !pakka run and !pakka investigate execute the same in-process runner
+// and investigator the HTTP API uses.
+package discord
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"strings"
+	"time"
+
+	"github.com/bwmarrin/discordgo"
+
+	"pakka/internal/config"
+	"pakka/internal/diagnostics"
+	"pakka/internal/investigate"
+)
+
+// maxMessage is Discord's message length limit.
+const maxMessage = 2000
+
+// Sender posts replies; *discordgo.Session satisfies it.
+type Sender interface {
+	ChannelMessageSend(channelID, content string, options ...discordgo.RequestOption) (*discordgo.Message, error)
+}
+
+// Incoming is the handler input, decoupled from the gateway event.
+type Incoming struct {
+	AuthorID  string
+	AuthorBot bool
+	GuildID   string
+	ChannelID string
+	Content   string
+}
+
+// Bot serves Pakka commands on Discord.
+type Bot struct {
+	session      *discordgo.Session
+	runner       *diagnostics.Runner
+	investigator *investigate.Investigator
+	model        investigate.Model // nil without API key; live investigate unavailable
+	prefix       string
+	guilds       map[string]bool // empty = all guilds
+	ownID        string
+	log          *slog.Logger
+}
+
+// New builds the bot (no network yet).
+func New(cfg config.Config, runner *diagnostics.Runner, inv *investigate.Investigator, model investigate.Model, log *slog.Logger) (*Bot, error) {
+	s, err := discordgo.New("Bot " + cfg.DiscordToken)
+	if err != nil {
+		return nil, err
+	}
+	s.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentsMessageContent
+	guilds := map[string]bool{}
+	for _, g := range cfg.DiscordGuilds {
+		guilds[g] = true
+	}
+	b := &Bot{
+		session: s, runner: runner, investigator: inv, model: model,
+		prefix: cfg.DiscordPrefix, guilds: guilds, log: log,
+	}
+	s.AddHandler(b.onMessage)
+	return b, nil
+}
+
+// Start opens the gateway connection.
+func (b *Bot) Start() error {
+	if err := b.session.Open(); err != nil {
+		return err
+	}
+	if u := b.session.State.User; u != nil {
+		b.ownID = u.ID
+	}
+	return nil
+}
+
+// Stop closes the gateway connection.
+func (b *Bot) Stop() error {
+	if b.session == nil {
+		return nil
+	}
+	return b.session.Close()
+}
+
+func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
+	b.Handle(context.Background(), s, Incoming{
+		AuthorID:  m.Author.ID,
+		AuthorBot: m.Author.Bot,
+		GuildID:   m.GuildID,
+		ChannelID: m.ChannelID,
+		Content:   m.Content,
+	})
+}
+
+// Handle parses one message and replies. Pure logic over Sender: unit-testable.
+func (b *Bot) Handle(ctx context.Context, sender Sender, in Incoming) {
+	if in.AuthorBot {
+		return
+	}
+	if b.ownID != "" && in.AuthorID == b.ownID {
+		return
+	}
+	if len(b.guilds) > 0 && !b.guilds[in.GuildID] {
+		return
+	}
+	content := strings.TrimSpace(in.Content)
+	if !strings.HasPrefix(content, b.prefix) {
+		return
+	}
+	args := strings.Fields(strings.TrimSpace(strings.TrimPrefix(content, b.prefix)))
+	if len(args) == 0 {
+		b.reply(sender, in.ChannelID, usage(b.prefix))
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	defer cancel()
+	var out string
+	switch args[0] {
+	case "help":
+		out = usage(b.prefix)
+	case "run":
+		out = b.cmdRun(ctx, args[1:])
+	case "investigate":
+		out = b.cmdInvestigate(ctx, args[1:])
+	default:
+		out = fmt.Sprintf("unknown command %q (try `%s help`)", args[0], b.prefix)
+	}
+	b.reply(sender, in.ChannelID, out)
+}
+
+func usage(prefix string) string {
+	return fmt.Sprintf("**Pakka** — connection diagnostics\n"+
+		"`%s run [scenario] [fixture|live]` — run checks (default: all-pass fixture)\n"+
+		"`%s investigate [fixture [scenario]|live] <symptoms>` — diagnose a problem\n"+
+		"scenarios: all-pass, local-misconfig, service-outage", prefix, prefix)
+}
+
+// cmdRun executes a diagnostic suite: `run [scenario] [fixture|live]`.
+func (b *Bot) cmdRun(ctx context.Context, args []string) string {
+	scenario, mode := "all-pass", diagnostics.ModeFixture
+	for _, a := range args {
+		if a == string(diagnostics.ModeFixture) || a == string(diagnostics.ModeLive) {
+			mode = diagnostics.Mode(a)
+			continue
+		}
+		scenario = a
+	}
+	run, err := b.runner.Run(ctx, mode, scenario, nil)
+	if err != nil {
+		return "run failed: " + err.Error()
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "**run** %s/%s\n", run.Mode, run.Scenario)
+	for _, r := range run.Results {
+		fmt.Fprintf(&sb, "`%s` %s — %s\n", r.CheckID, r.Outcome, r.Summary)
+	}
+	return sb.String()
+}
+
+// cmdInvestigate diagnoses symptoms: `investigate [fixture [scenario]|live] <symptoms>`.
+func (b *Bot) cmdInvestigate(ctx context.Context, args []string) string {
+	mode, scenario, rest := diagnostics.ModeFixture, "all-pass", args
+	if len(rest) > 0 && rest[0] == string(diagnostics.ModeLive) {
+		mode, rest = diagnostics.ModeLive, rest[1:]
+	} else if len(rest) > 0 && rest[0] == string(diagnostics.ModeFixture) {
+		rest = rest[1:]
+		if len(rest) > 0 {
+			if _, ok := investigate.ScriptFor(rest[0]); ok {
+				scenario, rest = rest[0], rest[1:]
+			}
+		}
+	}
+	symptoms := strings.Join(rest, " ")
+	if symptoms == "" {
+		symptoms = "unspecified connection problem"
+	}
+	var model investigate.Model
+	switch mode {
+	case diagnostics.ModeFixture:
+		script, ok := investigate.ScriptFor(scenario)
+		if !ok {
+			return fmt.Sprintf("unknown scenario %q", scenario)
+		}
+		model = script
+	case diagnostics.ModeLive:
+		if b.model == nil {
+			return "live investigations need a Meta API key"
+		}
+		model = b.model
+	}
+	finding, results, err := b.investigator.Run(ctx, model, symptoms)
+	if err != nil {
+		return "investigation failed: " + err.Error()
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "**%s** — %s\n", finding.Diagnosis, finding.Summary)
+	if len(finding.Evidence) > 0 {
+		fmt.Fprintf(&sb, "evidence: `%s`\n", strings.Join(finding.Evidence, "`, `"))
+	}
+	if finding.RecommendedNext != "" {
+		fmt.Fprintf(&sb, "next: %s\n", finding.RecommendedNext)
+	}
+	for _, r := range results {
+		fmt.Fprintf(&sb, "`%s` %s\n", r.CheckID, r.Outcome)
+	}
+	return sb.String()
+}
+
+func (b *Bot) reply(sender Sender, channelID, content string) {
+	if _, err := sender.ChannelMessageSend(channelID, truncate(content), discordgo.WithContext(context.Background())); err != nil {
+		b.log.Error("discord reply failed", "err", err)
+	}
+}
+
+// truncate caps output at Discord's message limit (rune-safe).
+func truncate(s string) string {
+	if len(s) <= maxMessage {
+		return s
+	}
+	runes := []rune(s)
+	if len(runes) <= maxMessage {
+		return s
+	}
+	return string(runes[:maxMessage-14]) + "\n…(truncated)"
+}

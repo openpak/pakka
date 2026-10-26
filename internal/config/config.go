@@ -6,6 +6,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -33,6 +34,12 @@ type Config struct {
 	MetaModel string
 	// InvestigateSteps bounds model turns per investigation.
 	InvestigateSteps int
+	// DiscordToken is the bot token, server-side only.
+	DiscordToken string
+	// DiscordGuilds allowlists guild IDs (empty = all guilds).
+	DiscordGuilds []string
+	// DiscordPrefix is the command prefix.
+	DiscordPrefix string
 }
 
 func getenv(key, def string) string {
@@ -67,7 +74,20 @@ func Load() Config {
 		MetaAPIBase:      getenvFirst("https://api.meta.ai/v1", "PAKKA_META_API_BASE", "META_API_BASE"),
 		MetaModel:        getenv("PAKKA_META_MODEL", "muse-spark-1.3-contributor"),
 		InvestigateSteps: getenvInt("PAKKA_INVESTIGATE_STEPS", 5),
+		DiscordToken:     os.Getenv("PAKKA_DISCORD_TOKEN"),
+		DiscordGuilds:    splitCSV(os.Getenv("PAKKA_DISCORD_GUILDS")),
+		DiscordPrefix:    getenv("PAKKA_DISCORD_PREFIX", "!pakka"),
 	}
+}
+
+func splitCSV(v string) []string {
+	var out []string
+	for _, part := range strings.Split(v, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 func getenvDuration(key string, def time.Duration) time.Duration {

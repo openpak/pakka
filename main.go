@@ -1,11 +1,13 @@
 // Command pakka runs the Pakka diagnostic harness: a server-side Go service
 // exposing bounded read-only diagnostic checks and model-guided
-// investigations over HTTP. See README.md and docs/architecture.md.
+// investigations over HTTP, plus a Discord bot entry point. See README.md
+// and docs/architecture.md.
 package main
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -15,6 +17,7 @@ import (
 
 	"pakka/internal/config"
 	"pakka/internal/diagnostics"
+	"pakka/internal/discord"
 	"pakka/internal/investigate"
 	"pakka/internal/meta"
 	"pakka/internal/server"
@@ -40,6 +43,21 @@ func run() error {
 		log.Info("meta integration enabled", "model", cfg.MetaModel)
 	} else {
 		log.Info("meta integration disabled: no API key configured")
+	}
+	var bot *discord.Bot
+	if cfg.DiscordToken != "" {
+		b, err := discord.New(cfg, runner, investigator, model, log)
+		if err != nil {
+			return err
+		}
+		if err := b.Start(); err != nil {
+			return fmt.Errorf("discord: %w", err)
+		}
+		bot = b
+		defer bot.Stop()
+		log.Info("discord connected")
+	} else {
+		log.Info("discord disabled: no bot token configured")
 	}
 	srv := &http.Server{
 		Addr: cfg.Addr,

@@ -65,6 +65,28 @@ Live investigations need a Meta API key; fixture mode works without one.
 
 Never commit credentials, player logs, account data or private research. Use synthetic diagnostic fixtures in public examples.
 
+## Discord
+
+The harness doubles as a Discord bot when `PAKKA_DISCORD_TOKEN` is set. The
+bot runs the same in-process checks and investigations as the HTTP API.
+
+Setup: create an application at
+[discord.com/developers/applications](https://discord.com/developers/applications),
+add a Bot, copy its token, and enable the **Message Content Intent** (without
+it the bot cannot read commands). Invite it via OAuth2 URL Generator with the
+`bot` scope and Send Messages + Read Messages/View Channels permissions.
+
+Commands (prefix `!pakka`, configurable via `PAKKA_DISCORD_PREFIX`):
+
+- `!pakka help` — usage
+- `!pakka run [scenario] [fixture|live]` — run checks (default: all-pass fixture)
+- `!pakka investigate [fixture [scenario]|live] <symptoms>` — diagnose a problem
+
+Set `PAKKA_DISCORD_GUILDS` to a comma-separated guild allowlist to restrict
+where the bot answers (empty = everywhere it can read). Live investigations
+need `PAKKA_META_API_KEY` too. Discord identity is never treated as an
+OpenPak account.
+
 ## Community
 
 - [OpenPak](https://openpak.org)
