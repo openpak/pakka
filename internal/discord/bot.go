@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -47,7 +48,10 @@ type Bot struct {
 	channels     map[string]bool // empty = all channels
 	ops          map[string]bool // empty = investigate unrestricted
 	modRoles     map[string]bool // empty = mentions unrestricted
-	router       *Router         // nil = support routing disabled
+	ownerLookup  func(guildID string) (string, error)
+	ownerCache   map[string]string // guild ID -> owner user ID
+	ownerMu      sync.Mutex
+	router       *Router // nil = support routing disabled
 	ownID        string
 	redactExtra  []string // internal endpoints/hostnames, never posted to chat
 	log          *slog.Logger
@@ -69,6 +73,14 @@ func New(cfg config.Config, runner *diagnostics.Runner, inv *investigate.Investi
 		router:      NewRouterFromConfig(cfg, metaClient),
 		redactExtra: RedactExtras(cfg),
 		log:         log,
+		ownerCache:  map[string]string{},
+	}
+	b.ownerLookup = func(guildID string) (string, error) {
+		g, err := s.Guild(guildID)
+		if err != nil {
+			return "", err
+		}
+		return g.OwnerID, nil
 	}
 	s.AddHandler(b.onMessage)
 	return b, nil
@@ -91,6 +103,31 @@ func hasAnyRole(allowed map[string]bool, roles []string) bool {
 	return false
 }
 
+// isOwner reports whether the author owns the guild, caching one REST
+// lookup per guild. False without a lookup (tests) or on lookup failure.
+func (b *Bot) isOwner(guildID, authorID string) bool {
+	if b.ownerLookup == nil || guildID == "" || authorID == "" {
+		return false
+	}
+	b.ownerMu.Lock()
+	if b.ownerCache == nil {
+		b.ownerCache = map[string]string{}
+	}
+	owner, ok := b.ownerCache[guildID]
+	b.ownerMu.Unlock()
+	if !ok {
+		var err error
+		owner, err = b.ownerLookup(guildID)
+		if err != nil {
+			return false
+		}
+		b.ownerMu.Lock()
+		b.ownerCache[guildID] = owner
+		b.ownerMu.Unlock()
+	}
+	return owner == authorID
+}
+
 // Session exposes the gateway session for the monitor and welcomer senders.
 func (b *Bot) Session() *discordgo.Session { return b.session }
 
@@ -99,9 +136,15 @@ func (b *Bot) Start() error {
 	if err := b.session.Open(); err != nil {
 		return err
 	}
-	if u := b.session.State.User; u != nil {
-		b.ownID = u.ID
+	// discordgo never populates State.User; resolve self over REST so
+	// mention detection and the self-message guard have an ID to match.
+	u, err := b.session.User("@me")
+	if err != nil {
+		b.session.Close()
+		return fmt.Errorf("resolve self user: %w", err)
 	}
+	b.ownID = u.ID
+	b.log.Info("discord self resolved", "id", u.ID)
 	return nil
 }
 
@@ -156,12 +199,21 @@ func (b *Bot) Handle(ctx context.Context, sender Sender, in Incoming) {
 	if !strings.HasPrefix(content, b.prefix) {
 		return
 	}
-	// Command channels gate prefixed commands only; support routing above
+	rest := strings.TrimSpace(strings.TrimPrefix(content, b.prefix))
+	args := strings.Fields(rest)
+	// Unknown "!pakka <text>" in a support channel is a support question:
+	// route it like plain chat, independent of command-channel gating.
+	if len(args) > 0 && !isCommand(args[0]) {
+		if msg, ok := b.routeText(in, rest); ok {
+			b.reply(sender, in.ChannelID, msg)
+			return
+		}
+	}
+	// Command channels gate prefixed commands only; support routing
 	// stays independent so it keeps working in its own channels.
 	if len(b.channels) > 0 && !b.channels[in.ChannelID] {
 		return
 	}
-	args := strings.Fields(strings.TrimSpace(strings.TrimPrefix(content, b.prefix)))
 	if len(args) == 0 {
 		b.reply(sender, in.ChannelID, usage(b.prefix))
 		return
@@ -189,7 +241,8 @@ func (b *Bot) handleMention(ctx context.Context, sender Sender, in Incoming, res
 		return
 	}
 	// Mentions are the privileged path: moderators only when roles are set.
-	if len(b.modRoles) > 0 && !hasAnyRole(b.modRoles, in.Roles) {
+	// The guild owner passes without needing a role (owners often have none).
+	if len(b.modRoles) > 0 && !hasAnyRole(b.modRoles, in.Roles) && !b.isOwner(in.GuildID, in.AuthorID) {
 		return
 	}
 	args := strings.Fields(rest)
@@ -197,12 +250,11 @@ func (b *Bot) handleMention(ctx context.Context, sender Sender, in Incoming, res
 		b.reply(sender, in.ChannelID, usage(b.prefix))
 		return
 	}
-	switch args[0] {
-	case "help", "run", "investigate":
+	if isCommand(args[0]) {
 		b.runCommand(ctx, sender, in, args)
-	default:
-		b.runCommand(ctx, sender, in, append([]string{"investigate", "live"}, args...))
+		return
 	}
+	b.runCommand(ctx, sender, in, append([]string{"investigate", "live"}, args...))
 }
 
 // runCommand dispatches one parsed command and replies.
@@ -233,6 +285,26 @@ func (b *Bot) route(in Incoming, content string) (string, bool) {
 		return "", false
 	}
 	return b.router.Route(in)
+}
+
+// routeText classifies free text (e.g. after an unknown !pakka command)
+// for support redirects. Unlike route it takes the text as given.
+func (b *Bot) routeText(in Incoming, content string) (string, bool) {
+	if b.router == nil || strings.TrimSpace(content) == "" {
+		return "", false
+	}
+	cp := in
+	cp.Content = content
+	return b.router.Route(cp)
+}
+
+// isCommand reports whether name is a built-in command.
+func isCommand(name string) bool {
+	switch name {
+	case "help", "run", "investigate":
+		return true
+	}
+	return false
 }
 
 func usage(prefix string) string {

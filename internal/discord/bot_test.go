@@ -204,3 +204,40 @@ func TestMentionModeratorsOnly(t *testing.T) {
 func plebCmd() Incoming {
 	return incoming("!pakka help")
 }
+
+func TestPrefixedQuestionRoutesInSupportChannel(t *testing.T) {
+	b := testBot()
+	b.channels["hackathon"] = true
+	b.router = NewRouter(keywordClassifier{}, "setup1", "conn1", "bug1", time.Hour)
+	msg := supportMsg("setup1", "u1", "!pakka I am getting 2618-0502 when trying to connect to the ARMS server")
+	if posts := handle(t, b, msg); len(posts) != 1 || !strings.Contains(posts[0], "<#conn1>") {
+		t.Errorf("prefixed support question not redirected: %v", posts)
+	}
+	// Known commands in support channels stay gated (silent outside hackathon).
+	cmd := supportMsg("setup1", "u2", "!pakka help")
+	if posts := handle(t, b, cmd); len(posts) != 0 {
+		t.Errorf("gated command got %d replies", len(posts))
+	}
+	// Unroutable unknown commands still report unknown where allowed.
+	b2 := testBot()
+	if posts := handle(t, b2, incoming("!pakka frobnicate")); len(posts) != 1 || !strings.Contains(posts[0], "unknown command") {
+		t.Errorf("unknown command: %v", posts)
+	}
+}
+
+func TestMentionOwnerBypass(t *testing.T) {
+	b := testBot()
+	b.ownID = "999"
+	b.modRoles["mod1"] = true
+	b.ownerLookup = func(guildID string) (string, error) { return "owner1", nil }
+	owner := incoming("<@999> help")
+	owner.AuthorID = "owner1"
+	if posts := handle(t, b, owner); len(posts) != 1 {
+		t.Errorf("owner mention got %d replies", len(posts))
+	}
+	pleb := incoming("<@999> help")
+	pleb.AuthorID = "u9"
+	if posts := handle(t, b, pleb); len(posts) != 0 {
+		t.Errorf("non-owner mention got %d replies", len(posts))
+	}
+}
