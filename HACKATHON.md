@@ -76,22 +76,46 @@ Commits `237617b`–`e0924da` (2026-10-26 16:59–18:06 UTC) are event-time plan
 - 2026-10-26: journal log watching — host shippers post journal JSON to
   `POST /v1/log-events`; Pakka filters by unit glob and announces
   warning+ to the ops-alerts channel and moderation signals to the
-  moderation-log channel (30-minute cooldown per message, host-tagged for
-  the draughts + Raspi ZeroTier pair). Commit
-  `36838350377dc56eb1ff45953769ad8c6c2a40d0`. Validation: unit tests
+  moderation-log channel (30-minute cooldown per message, host-tagged).
+  Commit `36838350377dc56eb1ff45953769ad8c6c2a40d0`. Validation: unit tests
   green with vet/gofmt. Deploy + shippers pending release.
 - 2026-10-26: release v0.4.0, log watching live on draughts — tag `v0.4.0`,
   multi-arch publish, server auto-updated with a ZeroTier-bound ingest port.
   Verified: service active, /healthz ok, log watcher started, synthetic ops
   + moderation test events accepted (202). Journal shipper installed on
-  draughts; Raspi excluded (not infra) — second monitored server TBD.
+  draughts; Raspi excluded (not infra) — quilted-waffle is the second
+  monitored server.
 - 2026-10-26: REST-only alerts mode for second-site instances — quilted-waffle
-  identified as the main host, but its ZeroTier path to draughts is down
-  (fast refusal, firewall suspected; no root to fix). Second hosts now run
-  the same image with `PAKKA_DISCORD_GATEWAY=false`, posting alerts via
-  Discord REST with no cross-host dependency. Commit
+  is the main host; its ZeroTier path to draughts flapped earlier so second
+  hosts run the same image with `PAKKA_DISCORD_GATEWAY=false`, posting alerts
+  via Discord REST with no cross-host dependency. Commit
   `5ab8775f6977581760f0373cccd5628460ab87eb`. Validation: unit tests green
   with vet/gofmt. Quilted-waffle deploy pending release.
+- 2026-10-26: release v0.5.0, quilted-waffle live — ZeroTier draughts↔quilted
+  verified up both ways (both nodes online, TCP OK), but the REST-only design
+  stands (no cross-host dependency). Tag `v0.5.0`, multi-arch publish;
+  quilted-waffle runs `openpak-pakka` (localhost-only 24800, gateway off,
+  monitor/welcomer disabled) plus a journal shipper. Fixed the ops-alerts
+  channel ID (`1564357306504974336`; the `...349...` variant 404s) on both
+  hosts after a live 404 proved the old value wrong. Verified end to end via
+  the Discord API: quilted synthetic events landed in #ops-alerts and
+  #moderation-log.
+- 2026-10-26: #hackathon dev channel + chat privacy (v0.5.1) — commands and
+  investigate gated to #hackathon (`1564373127599759400`); command gating
+  covers prefixed commands only so support routing keeps working in its own
+  channels; `@pakka` mentions answer (commands run as-is, free text becomes
+  a live investigation). All Discord-bound output is redacted: IPs, tokens,
+  secrets, local paths, and configured internal endpoints never reach chat
+  on any channel; service/host names stay as operational context. Verified:
+  unit tests green, live redaction check scrubbed IP/token/path in #ops-alerts.
+- 2026-10-26: moderator-only mentions (v0.5.2) —
+  `PAKKA_DISCORD_MOD_ROLES` gates `@pakka` to members holding a listed role
+  (Moderator `1563497150220865556`); prefixed commands unaffected.
+- 2026-10-26: mention + routing fixes (v0.5.3) — discordgo never sets
+  State.User, so self is now resolved over REST at startup (mentions were
+  silently dead); guild owner bypasses the mod gate (owners often hold no
+  roles; observed live); unknown `!pakka <text>` in support channels routes
+  like plain chat instead of going silent (observed live in #setup-help).
 
 ## Publication
 
