@@ -25,6 +25,10 @@ Commits `237617b`–`e0924da` (2026-10-26 16:59–18:06 UTC) are event-time plan
   `go test ./...` green; live smoke test of `/healthz` and a fixture
   `/v1/runs` call returned schema-valid evidence. Fixtures are synthetic;
   no model integration, repair flow, or deployment yet.
+- 2026-10-26: live-mode validation — two `/v1/runs` (mode live) calls against
+  DNS `openpak.org` (pass, 4 addrs), TCP `127.0.0.1:1` (fail, refused), unset
+  health URL (skipped); normalized outcomes byte-identical across runs.
+  No code change.
 
 ## Publication
 
