@@ -64,6 +64,12 @@ func New(cfg config.Config, runner *diagnostics.Runner, inv *investigate.Investi
 	if err != nil {
 		return nil, err
 	}
+	// discordgo defaults to LogError, which hides gateway close/reconnect
+	// warnings (e.g. disallowed-intent 4014 loops). Warnings surface them.
+	s.LogLevel = discordgo.LogWarning
+	s.AddHandler(func(_ *discordgo.Session, _ *discordgo.Disconnect) {
+		log.Warn("discord gateway disconnected, reconnecting")
+	})
 	s.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentsMessageContent | discordgo.IntentsGuildMembers
 	b := &Bot{
 		session: s, runner: runner, investigator: inv, model: model,

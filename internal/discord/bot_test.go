@@ -225,6 +225,18 @@ func TestPrefixedQuestionRoutesInSupportChannel(t *testing.T) {
 	}
 }
 
+func TestNewSurfacesGatewayWarnings(t *testing.T) {
+	cfg := config.Config{DiscordPrefix: "!pakka", DiscordToken: "test-token"}
+	b, err := New(cfg, diagnostics.NewRunner(cfg), investigate.NewInvestigator(cfg), nil, nil,
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.session.LogLevel != discordgo.LogWarning {
+		t.Errorf("LogLevel = %d, want LogWarning", b.session.LogLevel)
+	}
+}
+
 func TestMentionOwnerBypass(t *testing.T) {
 	b := testBot()
 	b.ownID = "999"
