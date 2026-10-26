@@ -18,7 +18,13 @@ Commits `237617b`–`e0924da` (2026-10-26 16:59–18:06 UTC) are event-time plan
 
 ## Event-built work
 
-None recorded yet. During the event, record each delivered feature, relevant commits, validation evidence and demo segment here. Separate implemented functionality from mockups, fixtures and future plans.
+- 2026-10-26: initial Go harness — HTTP service (`/healthz`, `/readyz`,
+  `POST /v1/runs`), bounded read-only checks (DNS/TCP/HTTP), fixture runner
+  with embedded synthetic scenarios, env-only config, CI. Commit
+  `f30ff3833eb14d913ef23ea1af65963e4e460350`. Validation: `gofmt`, `go vet`,
+  `go test ./...` green; live smoke test of `/healthz` and a fixture
+  `/v1/runs` call returned schema-valid evidence. Fixtures are synthetic;
+  no model integration, repair flow, or deployment yet.
 
 ## Publication
 
