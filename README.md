@@ -34,7 +34,7 @@ One supported platform, one reproducible connection failure, one reversible repa
 
 ## Development
 
-This repository currently contains documentation only. Runtime language, dependency versions, model ID and deployment configuration will be selected during implementation. There are no build or run commands yet.
+This repository currently contains documentation only. Go is the selected runtime language. Dependency versions, model ID and deployment configuration will be selected during implementation. There are no build or run commands yet.
 
 Never commit credentials, player logs, account data or private research. Use synthetic diagnostic fixtures in public examples.
 
