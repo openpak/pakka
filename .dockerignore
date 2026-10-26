@@ -1,0 +1,4 @@
+# Keep secrets and VCS metadata out of the image.
+.git
+.env
+.env.*
