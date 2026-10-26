@@ -69,7 +69,38 @@ type LogWatcher struct {
 	cooldown   time.Duration
 	mu         sync.Mutex
 	last       map[string]time.Time
+	recent     []AlertRecord
 	log        *slog.Logger
+}
+
+// maxRecent caps the alert history kept for the mod agent.
+const maxRecent = 50
+
+// AlertRecord is one announced alert, retained for agent queries.
+type AlertRecord struct {
+	Time    time.Time
+	Feed    string // "ops" or "mod"
+	Source  string // host/unit
+	Message string // first line, truncated
+}
+
+// Recent returns up to n newest alerts (n<=0 means all), newest first,
+// optionally filtered to sources containing unit.
+func (w *LogWatcher) Recent(n int, unit string) []AlertRecord {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	var out []AlertRecord
+	for i := len(w.recent) - 1; i >= 0; i-- {
+		r := w.recent[i]
+		if unit != "" && !strings.Contains(r.Source, unit) {
+			continue
+		}
+		out = append(out, r)
+		if n > 0 && len(out) >= n {
+			break
+		}
+	}
+	return out
 }
 
 // NewLogWatcher builds the watcher. Either channel may be empty to disable
@@ -118,6 +149,14 @@ func (w *LogWatcher) post(channel, source, msg string) {
 		return
 	}
 	w.last[key] = time.Now()
+	feed := "ops"
+	if channel == w.modChannel {
+		feed = "mod"
+	}
+	w.recent = append(w.recent, AlertRecord{Time: time.Now(), Feed: feed, Source: source, Message: truncateKey(firstLine(msg))})
+	if len(w.recent) > maxRecent {
+		w.recent = append([]AlertRecord{}, w.recent[len(w.recent)-maxRecent:]...)
+	}
 	w.mu.Unlock()
 	if err := w.announce.Announce(channel, truncate(msg)); err != nil {
 		w.log.Error("log announce failed", "channel", channel, "err", err)

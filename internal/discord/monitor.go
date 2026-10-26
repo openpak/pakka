@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -106,8 +107,29 @@ type Monitor struct {
 	announce  Announcer
 	channelID string
 	log       *slog.Logger
+	mu        sync.RWMutex
 	states    map[string]bool
 	baselined bool
+}
+
+// TargetState is one target's last known state.
+type TargetState struct {
+	Name string
+	Up   bool
+	Seen bool // false before the first poll covers it
+}
+
+// Snapshot returns the last known state per target for the mod agent.
+// Empty before the first poll; safe for concurrent use.
+func (m *Monitor) Snapshot() []TargetState {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]TargetState, 0, len(m.targets))
+	for _, t := range m.targets {
+		up, seen := m.states[t.Name]
+		out = append(out, TargetState{Name: t.Name, Up: up, Seen: seen})
+	}
+	return out
 }
 
 // NewMonitor builds the monitor; targets must be pre-parsed and non-empty.
@@ -145,9 +167,12 @@ func (m *Monitor) RunOnce(ctx context.Context) {
 func (m *Monitor) check(ctx context.Context) {
 	for _, t := range m.targets {
 		up, detail := m.prober.Probe(ctx, t)
+		m.mu.Lock()
 		prev, seen := m.states[t.Name]
 		m.states[t.Name] = up
-		if !m.baselined || !seen {
+		baselined := m.baselined
+		m.mu.Unlock()
+		if !baselined || !seen {
 			continue
 		}
 		if up == prev {
@@ -163,5 +188,7 @@ func (m *Monitor) check(ctx context.Context) {
 			m.log.Error("status announce failed", "target", t.Name, "err", err)
 		}
 	}
+	m.mu.Lock()
 	m.baselined = true
+	m.mu.Unlock()
 }

@@ -89,6 +89,9 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 	scenario := req.Scenario
 	if scenario == "" {
 		scenario = "all-pass"
+		if mode == diagnostics.ModeLive {
+			scenario = "live"
+		}
 	}
 	if !s.acquire(r) {
 		writeError(w, http.StatusServiceUnavailable, "server busy")

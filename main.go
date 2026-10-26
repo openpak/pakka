@@ -76,6 +76,7 @@ func run() error {
 		watcher = discord.NewLogWatcher(cfg.LogWatchUnits,
 			cfg.LogModChannel, cfg.LogOpsChannel,
 			discord.SenderAnnouncer{Sender: bot.RedactingSender()}, 30*time.Minute, log)
+		bot.SetAgentWatcher(watcher)
 		log.Info("log watcher started")
 	} else {
 		log.Info("log watcher disabled: needs bot plus alert channels")
@@ -128,6 +129,7 @@ func startMonitor(ctx context.Context, cfg config.Config, b *discord.Bot, log *s
 		discord.NewNetProber(cfg.CheckTimeout),
 		discord.SenderAnnouncer{Sender: b.RedactingSender()},
 		cfg.DiscordStatusChannel, log)
+	b.SetAgentMonitor(mon)
 	go mon.Run(ctx)
 	log.Info("status monitor started", "targets", len(targets))
 }

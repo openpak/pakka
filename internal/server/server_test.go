@@ -102,6 +102,20 @@ func TestCreateRunDefaultScenario(t *testing.T) {
 	}
 }
 
+func TestCreateRunDefaultScenarioLive(t *testing.T) {
+	res := postRun(t, `{"mode":"live"}`)
+	if res.Code != http.StatusOK {
+		t.Fatalf("code = %d, body = %s", res.Code, res.Body.String())
+	}
+	var run evidence.Run
+	if err := json.Unmarshal(res.Body.Bytes(), &run); err != nil {
+		t.Fatal(err)
+	}
+	if run.Scenario != "live" {
+		t.Errorf("scenario = %q, want live", run.Scenario)
+	}
+}
+
 func TestCreateRunErrors(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

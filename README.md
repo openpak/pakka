@@ -82,6 +82,13 @@ Commands (prefix `!pakka`, configurable via `PAKKA_DISCORD_PREFIX`):
 - `!pakka run [scenario] [fixture|live]` — run checks (default: all-pass fixture)
 - `!pakka investigate [fixture [scenario]|live] <symptoms>` — diagnose a problem
 
+Mentions: `@pakka <question>` talks to the moderator agent — the model
+answers in chat using live diagnostics, service status, and recent log
+alerts, and can post a notice to a staff channel when asked. Mentions can
+be limited to moderator roles with `PAKKA_DISCORD_MOD_ROLES` (the guild
+owner always passes); both user and role mentions trigger. All chat-bound
+output is redacted (IPs, tokens, secrets, paths never reach Discord).
+
 Set `PAKKA_DISCORD_GUILDS` to a comma-separated guild allowlist to restrict
 where the bot answers (empty = everywhere it can read). Live investigations
 need `PAKKA_META_API_KEY` too. Discord identity is never treated as an

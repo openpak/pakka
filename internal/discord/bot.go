@@ -54,7 +54,10 @@ type Bot struct {
 	roleLookup   func(guildID string) ([]string, error)
 	ownRoles     map[string]map[string]bool // guild ID -> bot's role IDs
 	roleMu       sync.Mutex
-	router       *Router // nil = support routing disabled
+	agentMonitor *Monitor
+	agentWatcher *LogWatcher
+	staff        map[string]string // post_notice name -> channel ID
+	router       *Router           // nil = support routing disabled
 	ownID        string
 	redactExtra  []string // internal endpoints/hostnames, never posted to chat
 	log          *slog.Logger
@@ -83,6 +86,11 @@ func New(cfg config.Config, runner *diagnostics.Runner, inv *investigate.Investi
 		redactExtra: RedactExtras(cfg),
 		log:         log,
 		ownerCache:  map[string]string{},
+		staff: map[string]string{
+			"modlog": cfg.LogModChannel,
+			"ops":    cfg.LogOpsChannel,
+			"status": cfg.DiscordStatusChannel,
+		},
 	}
 	b.ownerLookup = func(guildID string) (string, error) {
 		g, err := s.Guild(guildID)
@@ -305,7 +313,42 @@ func (b *Bot) handleMention(ctx context.Context, sender Sender, in Incoming, res
 		b.runCommand(ctx, sender, in, args)
 		return
 	}
-	b.runCommand(ctx, sender, in, append([]string{"investigate", "live"}, args...))
+	b.runAgent(ctx, sender, in, strings.Join(args, " "))
+}
+
+// SetAgentMonitor attaches the status monitor as an agent source.
+func (b *Bot) SetAgentMonitor(m *Monitor) { b.agentMonitor = m }
+
+// SetAgentWatcher attaches the log watcher as an agent source.
+func (b *Bot) SetAgentWatcher(w *LogWatcher) { b.agentWatcher = w }
+
+// runAgent answers free text with the moderator agent.
+func (b *Bot) runAgent(ctx context.Context, sender Sender, in Incoming, question string) {
+	if b.model == nil {
+		b.reply(sender, in.ChannelID, "live answers need a Meta API key")
+		return
+	}
+	notice := Redacting(sender, b.redactExtra...)
+	ag := &Agent{
+		model: b.model, runner: b.runner,
+		monitor: b.agentMonitor, watcher: b.agentWatcher,
+		poster: func(channel, message string) error {
+			id, ok := b.staff[channel]
+			if !ok || id == "" {
+				return fmt.Errorf("unknown staff channel %q", channel)
+			}
+			_, err := notice.ChannelMessageSend(id, truncate(message))
+			return err
+		},
+		log: b.log,
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	defer cancel()
+	answer, err := ag.Run(ctx, question)
+	if err != nil {
+		answer = "agent failed: " + err.Error()
+	}
+	b.reply(sender, in.ChannelID, answer)
 }
 
 // runCommand dispatches one parsed command and replies.
