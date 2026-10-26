@@ -116,6 +116,12 @@ Commits `237617b`–`e0924da` (2026-10-26 16:59–18:06 UTC) are event-time plan
   silently dead); guild owner bypasses the mod gate (owners often hold no
   roles; observed live); unknown `!pakka <text>` in support channels routes
   like plain chat instead of going silent (observed live in #setup-help).
+- 2026-10-26: package visibility (v0.5.4) — the ghcr.io/openpak/pakka
+  container showed UNLINKED so it never appeared on the repo sidebar (Actions
+  access grants are not the repo link). Added the
+  `org.opencontainers.image.source` label to the Dockerfile; the v0.5.4
+  publish linked the package to openpak/pakka (verified via API; stays
+  private like sibling packages). Both hosts on v0.5.4, /healthz ok.
 
 ## Publication
 
