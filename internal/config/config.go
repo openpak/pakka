@@ -25,6 +25,14 @@ type Config struct {
 	CheckTimeout time.Duration
 	// MaxRuns bounds concurrent diagnostic runs.
 	MaxRuns int
+	// MetaAPIKey is the Meta Model API credential, server-side only.
+	MetaAPIKey string
+	// MetaAPIBase overrides the Meta Model API base URL.
+	MetaAPIBase string
+	// MetaModel selects the investigation model.
+	MetaModel string
+	// InvestigateSteps bounds model turns per investigation.
+	InvestigateSteps int
 }
 
 func getenv(key, def string) string {
@@ -34,15 +42,31 @@ func getenv(key, def string) string {
 	return def
 }
 
-// Load reads configuration from the environment.
+// getenvFirst returns the first set variable, else def.
+func getenvFirst(def string, keys ...string) string {
+	for _, key := range keys {
+		if v := os.Getenv(key); v != "" {
+			return v
+		}
+	}
+	return def
+}
+
+// Load reads configuration from the environment, after loading ./.env when
+// present (plain environment variables take precedence).
 func Load() Config {
+	loadDotEnv(".")
 	return Config{
-		Addr:         getenv("PAKKA_ADDR", "127.0.0.1:24800"),
-		DNSHost:      getenv("PAKKA_DNS_HOST", "localhost"),
-		TCPAddr:      os.Getenv("PAKKA_TCP_ADDR"),
-		HealthURL:    os.Getenv("PAKKA_HEALTH_URL"),
-		CheckTimeout: getenvDuration("PAKKA_CHECK_TIMEOUT", 5*time.Second),
-		MaxRuns:      getenvInt("PAKKA_MAX_RUNS", 4),
+		Addr:             getenv("PAKKA_ADDR", "127.0.0.1:24800"),
+		DNSHost:          getenv("PAKKA_DNS_HOST", "localhost"),
+		TCPAddr:          os.Getenv("PAKKA_TCP_ADDR"),
+		HealthURL:        os.Getenv("PAKKA_HEALTH_URL"),
+		CheckTimeout:     getenvDuration("PAKKA_CHECK_TIMEOUT", 5*time.Second),
+		MaxRuns:          getenvInt("PAKKA_MAX_RUNS", 4),
+		MetaAPIKey:       getenvFirst("", "PAKKA_META_API_KEY", "META_API_KEY"),
+		MetaAPIBase:      getenvFirst("https://api.meta.ai/v1", "PAKKA_META_API_BASE", "META_API_BASE"),
+		MetaModel:        getenv("PAKKA_META_MODEL", "muse-spark-1.3-contributor"),
+		InvestigateSteps: getenvInt("PAKKA_INVESTIGATE_STEPS", 5),
 	}
 }
 

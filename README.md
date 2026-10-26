@@ -51,11 +51,17 @@ Run the harness (listens on `127.0.0.1:24800` by default):
 GOWORK=off go run .
 curl localhost:24800/healthz
 curl -X POST localhost:24800/v1/runs -d '{"mode":"fixture","scenario":"local-misconfig"}'
+curl -X POST localhost:24800/v1/investigations -d '{"mode":"fixture","scenario":"service-outage","symptoms":"cannot connect"}'
 ```
 
-Configuration is environment-only: `PAKKA_ADDR`, `PAKKA_DNS_HOST`,
-`PAKKA_TCP_ADDR`, `PAKKA_HEALTH_URL`, `PAKKA_CHECK_TIMEOUT`, `PAKKA_MAX_RUNS`.
+Configuration is environment-only (see `.env.example`; copy to `.env`,
+which is git-ignored, for local secrets — plain environment wins):
+`PAKKA_ADDR`, `PAKKA_DNS_HOST`, `PAKKA_TCP_ADDR`, `PAKKA_HEALTH_URL`,
+`PAKKA_CHECK_TIMEOUT`, `PAKKA_MAX_RUNS`, `PAKKA_META_API_KEY` (or
+`META_API_KEY`), `PAKKA_META_API_BASE`, `PAKKA_META_MODEL` (default
+`muse-spark-1.3-contributor`), `PAKKA_INVESTIGATE_STEPS`.
 Live-check targets come only from the environment, never from requests.
+Live investigations need a Meta API key; fixture mode works without one.
 
 Never commit credentials, player logs, account data or private research. Use synthetic diagnostic fixtures in public examples.
 

@@ -1,6 +1,6 @@
 // Command pakka runs the Pakka diagnostic harness: a server-side Go service
-// exposing bounded read-only diagnostic checks over HTTP. See README.md and
-// docs/architecture.md.
+// exposing bounded read-only diagnostic checks and model-guided
+// investigations over HTTP. See README.md and docs/architecture.md.
 package main
 
 import (
@@ -15,6 +15,8 @@ import (
 
 	"pakka/internal/config"
 	"pakka/internal/diagnostics"
+	"pakka/internal/investigate"
+	"pakka/internal/meta"
 	"pakka/internal/server"
 )
 
@@ -31,9 +33,23 @@ func run() error {
 
 	cfg := config.Load()
 	runner := diagnostics.NewRunner(cfg)
+	investigator := investigate.NewInvestigator(cfg)
+	var model investigate.Model
+	if cfg.MetaAPIKey != "" {
+		model = investigate.ClientModel{Client: meta.NewClient(cfg.MetaAPIBase, cfg.MetaAPIKey, cfg.MetaModel, 60*time.Second)}
+		log.Info("meta integration enabled", "model", cfg.MetaModel)
+	} else {
+		log.Info("meta integration disabled: no API key configured")
+	}
 	srv := &http.Server{
-		Addr:              cfg.Addr,
-		Handler:           server.New(runner, cfg.MaxRuns, log).Handler(),
+		Addr: cfg.Addr,
+		Handler: server.New(server.Options{
+			Runner:       runner,
+			Investigator: investigator,
+			Model:        model,
+			MaxRuns:      cfg.MaxRuns,
+			Log:          log,
+		}).Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
