@@ -46,6 +46,8 @@ type Config struct {
 	DiscordChannels []string
 	// DiscordOpsChannels gates reserved commands (empty = no restriction).
 	DiscordOpsChannels []string
+	// DiscordModRoles gates @pakka mentions to these role IDs (empty = all).
+	DiscordModRoles []string
 	// DiscordStatusChannel receives automatic outage alerts (empty = disabled).
 	DiscordStatusChannel string
 	// DiscordWelcomeChannel receives newcomer welcomes (empty = disabled).
@@ -108,6 +110,7 @@ func Load() Config {
 		DiscordGateway:           getenvBool("PAKKA_DISCORD_GATEWAY", true),
 		DiscordChannels:          splitCSV(os.Getenv("PAKKA_DISCORD_CHANNELS")),
 		DiscordOpsChannels:       splitCSV(os.Getenv("PAKKA_DISCORD_OPS_CHANNELS")),
+		DiscordModRoles:          splitCSV(os.Getenv("PAKKA_DISCORD_MOD_ROLES")),
 		DiscordStatusChannel:     os.Getenv("PAKKA_DISCORD_STATUS_CHANNEL"),
 		DiscordWelcomeChannel:    os.Getenv("PAKKA_DISCORD_WELCOME_CHANNEL"),
 		DiscordWelcomeInterval:   getenvDuration("PAKKA_DISCORD_WELCOME_INTERVAL", 15*time.Minute),

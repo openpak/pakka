@@ -34,6 +34,7 @@ func testBot() *Bot {
 		guilds:       map[string]bool{},
 		channels:     map[string]bool{},
 		ops:          map[string]bool{},
+		modRoles:     map[string]bool{},
 		log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 }
@@ -179,4 +180,27 @@ func TestRouterWiring(t *testing.T) {
 	if posts := handle(t, b, cmd); len(posts) != 1 || !strings.Contains(posts[0], "**run**") {
 		t.Errorf("command in support channel: %v", posts)
 	}
+}
+
+func TestMentionModeratorsOnly(t *testing.T) {
+	b := testBot()
+	b.ownID = "999"
+	b.modRoles["mod1"] = true
+	pleb := incoming("<@999> help")
+	if posts := handle(t, b, pleb); len(posts) != 0 {
+		t.Errorf("non-mod mention got %d replies", len(posts))
+	}
+	mod := incoming("<@999> help")
+	mod.Roles = []string{"other", "mod1"}
+	if posts := handle(t, b, mod); len(posts) != 1 {
+		t.Errorf("mod mention got %d replies", len(posts))
+	}
+	// Prefixed commands are unaffected by the moderator gate.
+	if posts := handle(t, b, plebCmd()); len(posts) != 1 {
+		t.Errorf("non-mod command got %d replies", len(posts))
+	}
+}
+
+func plebCmd() Incoming {
+	return incoming("!pakka help")
 }

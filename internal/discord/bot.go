@@ -32,6 +32,7 @@ type Incoming struct {
 	AuthorBot bool
 	GuildID   string
 	ChannelID string
+	Roles     []string
 	Content   string
 }
 
@@ -45,6 +46,7 @@ type Bot struct {
 	guilds       map[string]bool // empty = all guilds
 	channels     map[string]bool // empty = all channels
 	ops          map[string]bool // empty = investigate unrestricted
+	modRoles     map[string]bool // empty = mentions unrestricted
 	router       *Router         // nil = support routing disabled
 	ownID        string
 	redactExtra  []string // internal endpoints/hostnames, never posted to chat
@@ -63,6 +65,7 @@ func New(cfg config.Config, runner *diagnostics.Runner, inv *investigate.Investi
 		session: s, runner: runner, investigator: inv, model: model,
 		prefix: cfg.DiscordPrefix, guilds: toSet(cfg.DiscordGuilds),
 		channels: toSet(cfg.DiscordChannels), ops: toSet(cfg.DiscordOpsChannels),
+		modRoles:    toSet(cfg.DiscordModRoles),
 		router:      NewRouterFromConfig(cfg, metaClient),
 		redactExtra: RedactExtras(cfg),
 		log:         log,
@@ -77,6 +80,15 @@ func toSet(ids []string) map[string]bool {
 		out[id] = true
 	}
 	return out
+}
+
+func hasAnyRole(allowed map[string]bool, roles []string) bool {
+	for _, r := range roles {
+		if allowed[r] {
+			return true
+		}
+	}
+	return false
 }
 
 // Session exposes the gateway session for the monitor and welcomer senders.
@@ -107,8 +119,18 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		AuthorBot: m.Author.Bot,
 		GuildID:   m.GuildID,
 		ChannelID: m.ChannelID,
+		Roles:     memberRoles(m.Member),
 		Content:   m.Content,
 	})
+}
+
+// memberRoles reads guild role IDs off the gateway event (nil-safe: DMs
+// carry no member, and can never satisfy a moderator gate).
+func memberRoles(m *discordgo.Member) []string {
+	if m == nil {
+		return nil
+	}
+	return m.Roles
 }
 
 // Handle parses one message and replies. Pure logic over Sender: unit-testable.
@@ -164,6 +186,10 @@ func (b *Bot) stripMention(content string) (rest string, ok bool) {
 // anything else becomes a live investigation of the message text.
 func (b *Bot) handleMention(ctx context.Context, sender Sender, in Incoming, rest string) {
 	if len(b.channels) > 0 && !b.channels[in.ChannelID] {
+		return
+	}
+	// Mentions are the privileged path: moderators only when roles are set.
+	if len(b.modRoles) > 0 && !hasAnyRole(b.modRoles, in.Roles) {
 		return
 	}
 	args := strings.Fields(rest)
