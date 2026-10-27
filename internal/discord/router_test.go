@@ -111,7 +111,7 @@ func TestChainClassifier(t *testing.T) {
 }
 
 func testRouter() *Router {
-	return NewRouter(keywordClassifier{}, "setup1", "conn1", "bug1", time.Hour)
+	return NewRouter(keywordClassifier{}, "setup1", "conn1", "bug1", time.Hour, nil)
 }
 
 func supportMsg(channelID, authorID, content string) Incoming {
@@ -162,20 +162,20 @@ func TestRouteCooldown(t *testing.T) {
 }
 
 func TestRouterNeedsHelpAndBug(t *testing.T) {
-	if r := NewRouter(keywordClassifier{}, "", "conn1", "bug1", time.Hour); r != nil {
+	if r := NewRouter(keywordClassifier{}, "", "conn1", "bug1", time.Hour, nil); r != nil {
 		t.Error("missing setup built a router")
 	}
-	if r := NewRouter(keywordClassifier{}, "setup1", "conn1", "", time.Hour); r != nil {
+	if r := NewRouter(keywordClassifier{}, "setup1", "conn1", "", time.Hour, nil); r != nil {
 		t.Error("missing bug built a router")
 	}
 	// Empty connection merges into help instead of disabling.
-	if r := NewRouter(keywordClassifier{}, "help1", "", "bug1", time.Hour); r == nil {
+	if r := NewRouter(keywordClassifier{}, "help1", "", "bug1", time.Hour, nil); r == nil {
 		t.Fatal("two-channel mode refused")
 	}
 }
 
 func TestRouteTwoChannel(t *testing.T) {
-	r := NewRouter(keywordClassifier{}, "help1", "", "bug1", time.Hour)
+	r := NewRouter(keywordClassifier{}, "help1", "", "bug1", time.Hour, nil)
 	// Connection questions stay in help (no self-redirect).
 	if msg, ok := r.Route(supportMsg("help1", "u1", "cannot connect to lobby")); ok {
 		t.Errorf("help redirected in two-channel mode: %q", msg)

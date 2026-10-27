@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -151,14 +152,24 @@ type Router struct {
 	targets    map[Intent]string // intent -> channel ID
 	classifier Classifier
 	cooldown   time.Duration
+	log        *slog.Logger
 	mu         sync.Mutex
 	last       map[string]time.Time // author/channel -> last redirect
+}
+
+// Describe reports the routed channels for startup logging.
+func (r *Router) Describe() string {
+	if r == nil {
+		return "disabled"
+	}
+	return fmt.Sprintf("help=%s bug=%s conn=%s",
+		r.targets[IntentSetup], r.targets[IntentBug], r.targets[IntentConnection])
 }
 
 // NewRouter builds the router. The setup and bug channels are required;
 // an empty connection channel merges connection questions into the setup
 // (help) channel instead of disabling routing.
-func NewRouter(classifier Classifier, setupChannel, connectionChannel, bugChannel string, cooldown time.Duration) *Router {
+func NewRouter(classifier Classifier, setupChannel, connectionChannel, bugChannel string, cooldown time.Duration, log *slog.Logger) *Router {
 	if setupChannel == "" || bugChannel == "" {
 		return nil
 	}
@@ -173,11 +184,15 @@ func NewRouter(classifier Classifier, setupChannel, connectionChannel, bugChanne
 	} else {
 		targets[IntentConnection] = setupChannel
 	}
+	if log == nil {
+		log = slog.Default()
+	}
 	return &Router{
 		scopes:     scopes,
 		targets:    targets,
 		classifier: classifier,
 		cooldown:   cooldown,
+		log:        log,
 		last:       map[string]time.Time{},
 	}
 }
@@ -191,7 +206,7 @@ func NewRouterFromConfig(cfg config.Config, client *meta.Client) *Router {
 		c = chainClassifier{primary: ModelClassifier{Client: client}, fallback: keywordClassifier{}}
 	}
 	return NewRouter(c,
-		cfg.SupportSetupChannel, cfg.SupportConnectionChannel, cfg.SupportBugChannel, time.Hour)
+		cfg.SupportSetupChannel, cfg.SupportConnectionChannel, cfg.SupportBugChannel, time.Hour, slog.Default())
 }
 
 // Route returns a redirect message when in is an out-of-scope support
@@ -205,7 +220,11 @@ func (r *Router) Route(in Incoming) (string, bool) {
 		return "", false
 	}
 	intent, err := r.classifier.Classify(in.Content)
-	if err != nil || intent == "" || intent == scope {
+	if err != nil {
+		r.log.Warn("support classify failed", "err", err)
+		return "", false
+	}
+	if intent == "" || intent == scope {
 		return "", false
 	}
 	target, ok := r.targets[intent]
@@ -219,6 +238,8 @@ func (r *Router) Route(in Incoming) (string, bool) {
 		return "", false
 	}
 	r.last[key] = time.Now()
+	r.log.Info("support redirect", "author", in.AuthorID,
+		"channel", in.ChannelID, "intent", string(intent), "target", target)
 	return fmt.Sprintf("Hey <@%s>, this looks like %s — you'll get faster help in <#%s>.",
 		in.AuthorID, describe(intent), target), true
 }

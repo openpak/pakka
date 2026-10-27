@@ -170,7 +170,7 @@ func TestOpsRestriction(t *testing.T) {
 
 func TestRouterWiring(t *testing.T) {
 	b := testBot()
-	b.router = NewRouter(keywordClassifier{}, "setup1", "conn1", "bug1", time.Hour)
+	b.router = NewRouter(keywordClassifier{}, "setup1", "conn1", "bug1", time.Hour, nil)
 	msg := incoming("cannot connect to lobby at all")
 	msg.ChannelID = "setup1"
 	if posts := handle(t, b, msg); len(posts) != 1 || !strings.Contains(posts[0], "<#conn1>") {
@@ -209,7 +209,7 @@ func plebCmd() Incoming {
 func TestPrefixedQuestionRoutesInSupportChannel(t *testing.T) {
 	b := testBot()
 	b.channels["hackathon"] = true
-	b.router = NewRouter(keywordClassifier{}, "setup1", "conn1", "bug1", time.Hour)
+	b.router = NewRouter(keywordClassifier{}, "setup1", "conn1", "bug1", time.Hour, nil)
 	msg := supportMsg("setup1", "u1", "!pakka I am getting 2618-0502 when trying to connect to the ARMS server")
 	if posts := handle(t, b, msg); len(posts) != 1 || !strings.Contains(posts[0], "<#conn1>") {
 		t.Errorf("prefixed support question not redirected: %v", posts)

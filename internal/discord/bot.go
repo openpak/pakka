@@ -110,6 +110,7 @@ func New(cfg config.Config, runner *diagnostics.Runner, inv *investigate.Investi
 		return m.Roles, nil
 	}
 	s.AddHandler(b.onMessage)
+	log.Info("support routing", "state", b.router.Describe())
 	return b, nil
 }
 

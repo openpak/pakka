@@ -82,7 +82,7 @@ func TestReplyRedactsInfra(t *testing.T) {
 func TestRoutingIndependentOfCommandChannels(t *testing.T) {
 	b := testBot()
 	b.channels["hackathon"] = true
-	b.router = NewRouter(keywordClassifier{}, "setup1", "conn1", "bug1", 0)
+	b.router = NewRouter(keywordClassifier{}, "setup1", "conn1", "bug1", 0, nil)
 	mismatch := supportMsg("setup1", "u1", "cannot connect to lobby")
 	if posts := handle(t, b, mismatch); len(posts) != 1 || !strings.Contains(posts[0], "<#conn1>") {
 		t.Errorf("support routing broke under channel gating: %v", posts)
