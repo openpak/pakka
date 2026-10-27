@@ -224,6 +224,8 @@ func (r *Router) Route(in Incoming) (string, bool) {
 		r.log.Warn("support classify failed", "err", err)
 		return "", false
 	}
+	r.log.Info("support classify", "channel", in.ChannelID,
+		"author", in.AuthorID, "scope", string(scope), "intent", string(intent))
 	if intent == "" || intent == scope {
 		return "", false
 	}
