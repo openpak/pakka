@@ -18,6 +18,7 @@ import (
 	"pakka/internal/config"
 	"pakka/internal/diagnostics"
 	"pakka/internal/discord"
+	"pakka/internal/eshop"
 	"pakka/internal/investigate"
 	"pakka/internal/meta"
 	"pakka/internal/server"
@@ -60,7 +61,7 @@ func run() error {
 			if err := b.Start(); err != nil {
 				return fmt.Errorf("discord: %w", err)
 			}
-			defer bot.Stop()
+			defer b.Stop()
 			log.Info("discord connected")
 		} else {
 			log.Info("discord gateway disabled: REST-only alerts mode")
@@ -68,6 +69,7 @@ func run() error {
 		bot = b
 		startMonitor(ctx, cfg, b, log)
 		startWelcomer(ctx, cfg, b, log)
+		startEshop(ctx, cfg, b, log)
 	} else {
 		log.Info("discord disabled: no bot token configured")
 	}
@@ -129,9 +131,47 @@ func startMonitor(ctx context.Context, cfg config.Config, b *discord.Bot, log *s
 		discord.NewNetProber(cfg.CheckTimeout),
 		discord.SenderAnnouncer{Sender: b.RedactingSender()},
 		cfg.DiscordStatusChannel, log)
+	if cfg.AlertsChannel != "" {
+		mon.SetAlertsMirror(discord.SenderAnnouncer{Sender: b.RedactingSender()}, cfg.AlertsChannel)
+	}
 	b.SetAgentMonitor(mon)
 	go mon.Run(ctx)
 	log.Info("status monitor started", "targets", len(targets))
+}
+
+// startEshop launches eShop update monitoring when the store API and both
+// announce channels are configured. Run on one host only: every instance
+// would otherwise post the same announcements.
+func startEshop(ctx context.Context, cfg config.Config, b *discord.Bot, log *slog.Logger) {
+	if cfg.EshopAPIBase == "" || cfg.AlertsChannel == "" || cfg.EshopAnnounceChannel == "" {
+		log.Info("eshop watcher disabled: needs api base plus staff and announce channels")
+		return
+	}
+	sources, err := eshop.ParseSources(cfg.EshopSources)
+	if err != nil {
+		log.Warn("eshop watcher: bad sources, catalog tracking only", "err", err)
+		sources = map[string]string{}
+	}
+	var trigger eshop.Trigger
+	if cfg.EshopSyncCommand != "" {
+		trigger = eshop.NewCommandTrigger(cfg.EshopSyncCommand, cfg.EshopSyncTimeout, cfg.EshopSyncCooldown)
+	} else {
+		log.Info("eshop watcher: no sync command, detect and announce only")
+	}
+	// The catalog list is megabytes; give both clients room regardless of
+	// the fast diagnostics timeout.
+	timeout := max(cfg.CheckTimeout, 30*time.Second)
+	w := eshop.New(
+		eshop.NewStoreClient(cfg.EshopAPIBase, cfg.EshopInternalKey, timeout),
+		eshop.NewGitHubClient(cfg.GitHubToken, timeout),
+		trigger,
+		discord.SenderAnnouncer{Sender: b.RedactingSender()},
+		discord.SenderAnnouncer{Sender: b.RedactingSender()},
+		cfg.AlertsChannel, cfg.EshopAnnounceChannel,
+		sources, log)
+	b.SetEshopWatcher(w)
+	go w.Run(ctx, cfg.EshopInterval)
+	log.Info("eshop watcher started", "sources", len(sources))
 }
 
 // startWelcomer launches newcomer welcomes when a welcome channel is set.

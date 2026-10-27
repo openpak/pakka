@@ -24,7 +24,7 @@ type Agent struct {
 	runner  *diagnostics.Runner
 	monitor *Monitor    // nil = service_status unavailable
 	watcher *LogWatcher // nil = recent_alerts unavailable
-	// poster sends a notice to a staff channel ("modlog", "ops", "status").
+	// poster sends a notice to a staff channel ("modlog", "ops", "status", "alerts").
 	poster func(channel, message string) error
 	steps  int
 	log    *slog.Logger
@@ -35,7 +35,7 @@ const agentSystem = `You are Pakka, a moderator assistant for the OpenPak Discor
 Rules:
 - Use tools for facts; never invent service states, errors, or diagnostics.
 - service_status shows the monitored services; recent_alerts shows what the log watcher caught; diagnostics_run runs live checks.
-- post_notice posts to a staff channel (modlog, ops, status) — ONLY when explicitly asked to post, announce, or notify, and say what you posted.
+- post_notice posts to a staff channel (modlog, ops, status, alerts) — ONLY when explicitly asked to post, announce, or notify, and say what you posted.
 - Never reveal infrastructure details (IPs, tokens, paths); the channel redacts them anyway.`
 
 // AgentTools returns the agent's tool definitions.
@@ -66,7 +66,7 @@ func AgentTools() []meta.Tool {
 			Name:        "post_notice",
 			Description: "Post a message to a staff channel; only when asked to post or announce.",
 			Parameters: obj(map[string]any{
-				"channel": map[string]any{"type": "string", "description": "one of: modlog, ops, status"},
+				"channel": map[string]any{"type": "string", "description": "one of: modlog, ops, status, alerts"},
 				"message": map[string]any{"type": "string", "description": "notice text"},
 			}, "channel", "message"),
 		}},
@@ -196,14 +196,14 @@ func (a *Agent) toolAlerts(n int, unit string) string {
 	return sb.String()
 }
 
-var staffNames = map[string]bool{"modlog": true, "ops": true, "status": true}
+var staffNames = map[string]bool{"modlog": true, "ops": true, "status": true, "alerts": true}
 
 func (a *Agent) toolPost(channel, message string) string {
 	if a.poster == nil {
 		return `{"error":"posting unavailable"}`
 	}
 	if !staffNames[channel] {
-		return `{"error":"unknown staff channel (want modlog|ops|status)"}`
+		return `{"error":"unknown staff channel (want modlog|ops|status|alerts)"}`
 	}
 	message = strings.TrimSpace(message)
 	if message == "" {

@@ -161,8 +161,38 @@ func TestRouteCooldown(t *testing.T) {
 	}
 }
 
-func TestRouterNeedsAllChannels(t *testing.T) {
-	if r := NewRouter(keywordClassifier{}, "setup1", "", "bug1", time.Hour); r != nil {
-		t.Error("partial channels built a router")
+func TestRouterNeedsHelpAndBug(t *testing.T) {
+	if r := NewRouter(keywordClassifier{}, "", "conn1", "bug1", time.Hour); r != nil {
+		t.Error("missing setup built a router")
+	}
+	if r := NewRouter(keywordClassifier{}, "setup1", "conn1", "", time.Hour); r != nil {
+		t.Error("missing bug built a router")
+	}
+	// Empty connection merges into help instead of disabling.
+	if r := NewRouter(keywordClassifier{}, "help1", "", "bug1", time.Hour); r == nil {
+		t.Fatal("two-channel mode refused")
+	}
+}
+
+func TestRouteTwoChannel(t *testing.T) {
+	r := NewRouter(keywordClassifier{}, "help1", "", "bug1", time.Hour)
+	// Connection questions stay in help (no self-redirect).
+	if msg, ok := r.Route(supportMsg("help1", "u1", "cannot connect to lobby")); ok {
+		t.Errorf("help redirected in two-channel mode: %q", msg)
+	}
+	// Setup questions in bug reports redirect to help.
+	msg, ok := r.Route(supportMsg("bug1", "u1", "how do I install the patch"))
+	if !ok || !strings.Contains(msg, "<#help1>") {
+		t.Fatalf("bug->help redirect = %q, %v", msg, ok)
+	}
+	// Connection questions in bug reports redirect to help too.
+	msg, ok = r.Route(supportMsg("bug1", "u2", "cannot connect to lobby"))
+	if !ok || !strings.Contains(msg, "<#help1>") || !strings.Contains(msg, "connection issue") {
+		t.Fatalf("bug->help redirect = %q, %v", msg, ok)
+	}
+	// Bug reports in help still redirect to bugs.
+	msg, ok = r.Route(supportMsg("help1", "u3", "game crashes on startup with black screen"))
+	if !ok || !strings.Contains(msg, "<#bug1>") {
+		t.Fatalf("help->bug redirect = %q, %v", msg, ok)
 	}
 }

@@ -60,7 +60,8 @@ type Config struct {
 	StatusInterval time.Duration
 	// SupportSetupChannel scopes setup questions (empty = routing disabled).
 	SupportSetupChannel string
-	// SupportConnectionChannel scopes connection questions.
+	// SupportConnectionChannel scopes connection questions. Empty merges
+	// them into the setup (help) channel instead of disabling routing.
 	SupportConnectionChannel string
 	// SupportBugChannel scopes bug reports.
 	SupportBugChannel string
@@ -70,6 +71,33 @@ type Config struct {
 	LogOpsChannel string
 	// LogWatchUnits limits watched units (glob list, default openpak-*).
 	LogWatchUnits []string
+	// EshopAPIBase is the store admin API root (nx-baas game-API
+	// listener). Empty disables the eShop watcher.
+	EshopAPIBase string
+	// EshopInternalKey is the X-Internal-Key for the store admin API.
+	EshopInternalKey string
+	// EshopSources maps 4TU package names to upstream repo slugs
+	// (sources.json format): inline JSON, or @path to read the file.
+	// Empty means catalog-derived tracking only.
+	EshopSources string
+	// EshopInterval paces eShop catalog/upstream polls.
+	EshopInterval time.Duration
+	// GitHubToken lifts the releases rate limit (else 60 req/hour).
+	GitHubToken string
+	// EshopSyncCommand runs the sync pipeline (hbstore-tools) that builds
+	// new NSPs and publishes them. Empty = detect and announce only.
+	EshopSyncCommand string
+	// EshopSyncTimeout kills a hung sync run.
+	EshopSyncTimeout time.Duration
+	// EshopSyncCooldown paces sync runs.
+	EshopSyncCooldown time.Duration
+	// AlertsChannel receives tagged staff alerts ([Area - service]): eShop
+	// drift and sync progress plus the status-monitor mirror. Empty disables
+	// the eShop watcher (the mirror just stays off). Staff-only.
+	AlertsChannel string
+	// EshopAnnounceChannel receives the standardized public post when an
+	// update lands (empty = eShop watcher disabled).
+	EshopAnnounceChannel string
 }
 
 func getenv(key, def string) string {
@@ -122,6 +150,16 @@ func Load() Config {
 		LogModChannel:            os.Getenv("PAKKA_DISCORD_MODLOG_CHANNEL"),
 		LogOpsChannel:            os.Getenv("PAKKA_DISCORD_OPS_ALERTS_CHANNEL"),
 		LogWatchUnits:            splitCSVDefault(os.Getenv("PAKKA_LOG_WATCH_UNITS"), "openpak-*"),
+		EshopAPIBase:             os.Getenv("PAKKA_ESHOP_API_BASE"),
+		EshopInternalKey:         os.Getenv("PAKKA_ESHOP_INTERNAL_KEY"),
+		EshopSources:             os.Getenv("PAKKA_ESHOP_SOURCES"),
+		EshopInterval:            getenvDuration("PAKKA_ESHOP_INTERVAL", time.Hour),
+		GitHubToken:              getenvFirst("", "PAKKA_GITHUB_TOKEN", "GITHUB_TOKEN"),
+		EshopSyncCommand:         os.Getenv("PAKKA_ESHOP_SYNC_COMMAND"),
+		EshopSyncTimeout:         getenvDuration("PAKKA_ESHOP_SYNC_TIMEOUT", 2*time.Hour),
+		EshopSyncCooldown:        getenvDuration("PAKKA_ESHOP_SYNC_COOLDOWN", 6*time.Hour),
+		AlertsChannel:            os.Getenv("PAKKA_DISCORD_ALERTS_CHANNEL"),
+		EshopAnnounceChannel:     os.Getenv("PAKKA_DISCORD_ANNOUNCE_CHANNEL"),
 	}
 }
 

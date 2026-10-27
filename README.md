@@ -81,6 +81,7 @@ Commands (prefix `!pakka`, configurable via `PAKKA_DISCORD_PREFIX`):
 - `!pakka help` — usage
 - `!pakka run [scenario] [fixture|live]` — run checks (default: all-pass fixture)
 - `!pakka investigate [fixture [scenario]|live] <symptoms>` — diagnose a problem
+- `!pakka eshop` — eShop update watch status (tracked/behind titles, last sync)
 
 Mentions: `@pakka <question>` talks to the moderator agent — the model
 answers in chat using live diagnostics, service status, and recent log
@@ -102,32 +103,54 @@ Status monitor: with `PAKKA_DISCORD_STATUS_CHANNEL` and
 `PAKKA_STATUS_TARGETS` (`name=https://...` or `name=tcp://host:port`,
 comma-separated) set, the bot polls every `PAKKA_STATUS_INTERVAL` (default
 60s) and posts up/down transitions to the status channel. The first poll
-only baselines, so restarts never flood.
+only baselines, so restarts never flood. With
+`PAKKA_DISCORD_ALERTS_CHANNEL` set, transitions are also mirrored there as
+tagged staff alerts (`[Area - service] ...` for targets named
+`Area/service`, `[Status - name]` otherwise).
 
 Welcomer: with `PAKKA_DISCORD_WELCOME_CHANNEL` set, the bot tags members who
 joined since the previous pass every `PAKKA_DISCORD_WELCOME_INTERVAL`
 (default 15m). Needs the Server Members intent enabled on the bot page.
 
-Support routing: with `PAKKA_DISCORD_SETUP_CHANNEL`,
-`PAKKA_DISCORD_CONNECTION_CHANNEL` and `PAKKA_DISCORD_BUG_CHANNEL` set (all
-three or disabled), the bot classifies messages in those channels with the
-model (keywords cover API failures) and redirects out-of-scope questions to
-the right one (one redirect per user per hour). Unsure cases stay silent
-rather than misrouting.
+Support routing: with `PAKKA_DISCORD_SETUP_CHANNEL` (help) and
+`PAKKA_DISCORD_BUG_CHANNEL` set, the bot classifies messages in those
+channels with the model (keywords cover API failures) and redirects
+out-of-scope questions to the right one (one redirect per user per hour).
+`PAKKA_DISCORD_CONNECTION_CHANNEL` is optional: set it for three-channel
+routing, empty merges connection questions into help. Unsure cases stay
+silent rather than misrouting.
 
 Log watching: each monitored host runs a journal shipper (a user service
 piping `journalctl --user --follow -o json` into `POST /v1/log-events`).
 Pakka filters by `PAKKA_LOG_WATCH_UNITS` (glob list, default `openpak-*`),
 posts priority warning+ to `PAKKA_DISCORD_OPS_ALERTS_CHANNEL` and
 moderation signals to `PAKKA_DISCORD_MODLOG_CHANNEL`, with a 30-minute
-cooldown per distinct message. The ingest endpoint is reachable only over
-localhost and the private ZeroTier network — never expose it publicly.
+cooldown per distinct message. Point both at one #logs channel to merge
+the streams; actionable `[Area - service]` alerts go to
+`PAKKA_DISCORD_ALERTS_CHANNEL` instead. The ingest endpoint is reachable
+only over localhost and the private ZeroTier network — never expose it
+publicly.
 
 Multi-host alerts: additional hosts run the same image with
 `PAKKA_DISCORD_GATEWAY=false` (REST-only, no second gateway session) plus a
 local shipper posting to their own localhost ingest. Each instance announces
-with its own hostname; run the status monitor and welcomer on one host only
-to avoid duplicates.
+with its own hostname; run the status monitor, welcomer, and eShop watcher
+on one host only to avoid duplicates.
+
+eShop watch: with `PAKKA_ESHOP_API_BASE` (the store admin API root),
+`PAKKA_DISCORD_ALERTS_CHANNEL` (staff-only) and
+`PAKKA_DISCORD_ANNOUNCE_CHANNEL` (#announcements) set, Pakka polls the
+eShop catalog every `PAKKA_ESHOP_INTERVAL` (default 1h) plus each tracked
+title's upstream GitHub releases. Titles whose catalog source is a GitHub
+release URL track that repo directly; `PAKKA_ESHOP_SOURCES` (sources.json
+format, inline or `@path`) covers the rest. `PAKKA_GITHUB_TOKEN` lifts the
+releases rate limit. A new upstream release posts `[Switch - eshop] ...`
+to alerts and, with `PAKKA_ESHOP_SYNC_COMMAND` set (e.g. hbstore-tools
+`./run-hb.sh sync` on a host with the toolchain and keys), triggers the
+pipeline that builds the new NSP and publishes it — single-flight with
+`PAKKA_ESHOP_SYNC_TIMEOUT` and `PAKKA_ESHOP_SYNC_COOLDOWN`. When the new
+version lands in the catalog, Pakka posts the standardized update notice
+to #announcements. The first poll only baselines, so restarts never flood.
 
 ## Community
 

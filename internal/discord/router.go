@@ -155,25 +155,27 @@ type Router struct {
 	last       map[string]time.Time // author/channel -> last redirect
 }
 
-// NewRouter builds the router; all three support channels are required.
+// NewRouter builds the router. The setup and bug channels are required;
+// an empty connection channel merges connection questions into the setup
+// (help) channel instead of disabling routing.
 func NewRouter(classifier Classifier, setupChannel, connectionChannel, bugChannel string, cooldown time.Duration) *Router {
-	if setupChannel == "" || connectionChannel == "" || bugChannel == "" {
+	if setupChannel == "" || bugChannel == "" {
 		return nil
 	}
 	if cooldown <= 0 {
 		cooldown = time.Hour
 	}
+	scopes := map[string]Intent{setupChannel: IntentSetup, bugChannel: IntentBug}
+	targets := map[Intent]string{IntentSetup: setupChannel, IntentBug: bugChannel}
+	if connectionChannel != "" && connectionChannel != setupChannel {
+		scopes[connectionChannel] = IntentConnection
+		targets[IntentConnection] = connectionChannel
+	} else {
+		targets[IntentConnection] = setupChannel
+	}
 	return &Router{
-		scopes: map[string]Intent{
-			setupChannel:      IntentSetup,
-			connectionChannel: IntentConnection,
-			bugChannel:        IntentBug,
-		},
-		targets: map[Intent]string{
-			IntentSetup:      setupChannel,
-			IntentConnection: connectionChannel,
-			IntentBug:        bugChannel,
-		},
+		scopes:     scopes,
+		targets:    targets,
 		classifier: classifier,
 		cooldown:   cooldown,
 		last:       map[string]time.Time{},
@@ -207,7 +209,7 @@ func (r *Router) Route(in Incoming) (string, bool) {
 		return "", false
 	}
 	target, ok := r.targets[intent]
-	if !ok {
+	if !ok || target == in.ChannelID {
 		return "", false
 	}
 	key := in.AuthorID + "/" + in.ChannelID

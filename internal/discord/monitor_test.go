@@ -70,6 +70,47 @@ func TestMonitorTransitions(t *testing.T) {
 	}
 }
 
+func TestAlertTag(t *testing.T) {
+	for name, want := range map[string][2]string{
+		"Switch/nx-baas": {"[Switch - nx-baas]", "nx-baas"},
+		"Core/accounts":  {"[Core - accounts]", "accounts"},
+		"website":        {"[Status - website]", "website"},
+		"Bad/":           {"[Status - Bad/]", "Bad/"},
+	} {
+		if got := AlertTag(name); got != want[0] {
+			t.Errorf("AlertTag(%q) = %q, want %q", name, got, want[0])
+		}
+		if got := shortName(name); got != want[1] {
+			t.Errorf("shortName(%q) = %q, want %q", name, got, want[1])
+		}
+	}
+}
+
+func TestAlertsMirror(t *testing.T) {
+	up := map[string]bool{"Switch/nx-baas": true}
+	targets := ParseTargets("Switch/nx-baas=https://a.invalid/")
+	prober := funcProber(func(_ context.Context, tg Target) (bool, string) {
+		return up[tg.Name], "boom"
+	})
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	status, alerts := &fakeAnnouncer{}, &fakeAnnouncer{}
+	m := NewMonitor(targets, time.Minute, prober, status, "status1", log)
+	m.SetAlertsMirror(alerts, "alerts1")
+	ctx := context.Background()
+	m.RunOnce(ctx)
+	if len(alerts.posts) != 0 {
+		t.Fatalf("baseline mirrored: %v", alerts.posts)
+	}
+	up["Switch/nx-baas"] = false
+	m.RunOnce(ctx)
+	if len(alerts.posts) != 1 || alerts.posts[0] != "[Switch - nx-baas] nx-baas is DOWN — boom" {
+		t.Fatalf("mirror posts = %v", alerts.posts)
+	}
+	if len(status.posts) != 1 {
+		t.Fatalf("status posts = %v", status.posts)
+	}
+}
+
 func TestNetProber(t *testing.T) {
 	p := NewNetProber(time.Second)
 	ctx := context.Background()

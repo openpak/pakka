@@ -12,6 +12,7 @@ import (
 
 	"pakka/internal/config"
 	"pakka/internal/diagnostics"
+	"pakka/internal/eshop"
 	"pakka/internal/investigate"
 )
 
@@ -252,6 +253,21 @@ func TestMentionOwnRole(t *testing.T) {
 	b2.ownID = "999"
 	if posts := handle(t, b2, incoming("<@&pakkarole> help")); len(posts) != 0 {
 		t.Errorf("unverifiable role mention got %d replies", len(posts))
+	}
+}
+
+func TestEshopCommand(t *testing.T) {
+	b := testBot()
+	if posts := handle(t, b, incoming("!pakka eshop")); len(posts) != 1 || !strings.Contains(posts[0], "not configured") {
+		t.Fatalf("unconfigured eshop -> %v", posts)
+	}
+	var cat eshop.Catalog
+	var rel eshop.Releases
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	b.SetEshopWatcher(eshop.New(cat, rel, nil, nil, nil, "", "", nil, log))
+	posts := handle(t, b, incoming("!pakka eshop"))
+	if len(posts) != 1 || !strings.Contains(posts[0], "eShop watch") || !strings.Contains(posts[0], "sync: not configured") {
+		t.Fatalf("eshop status -> %v", posts)
 	}
 }
 

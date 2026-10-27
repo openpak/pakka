@@ -15,6 +15,7 @@ import (
 
 	"pakka/internal/config"
 	"pakka/internal/diagnostics"
+	"pakka/internal/eshop"
 	"pakka/internal/investigate"
 	"pakka/internal/meta"
 )
@@ -56,6 +57,7 @@ type Bot struct {
 	roleMu       sync.Mutex
 	agentMonitor *Monitor
 	agentWatcher *LogWatcher
+	eshopWatcher *eshop.Watcher
 	staff        map[string]string // post_notice name -> channel ID
 	router       *Router           // nil = support routing disabled
 	ownID        string
@@ -90,6 +92,7 @@ func New(cfg config.Config, runner *diagnostics.Runner, inv *investigate.Investi
 			"modlog": cfg.LogModChannel,
 			"ops":    cfg.LogOpsChannel,
 			"status": cfg.DiscordStatusChannel,
+			"alerts": cfg.AlertsChannel,
 		},
 	}
 	b.ownerLookup = func(guildID string) (string, error) {
@@ -322,6 +325,9 @@ func (b *Bot) SetAgentMonitor(m *Monitor) { b.agentMonitor = m }
 // SetAgentWatcher attaches the log watcher as an agent source.
 func (b *Bot) SetAgentWatcher(w *LogWatcher) { b.agentWatcher = w }
 
+// SetEshopWatcher attaches the eShop watcher for the eshop status command.
+func (b *Bot) SetEshopWatcher(w *eshop.Watcher) { b.eshopWatcher = w }
+
 // runAgent answers free text with the moderator agent.
 func (b *Bot) runAgent(ctx context.Context, sender Sender, in Incoming, question string) {
 	if b.model == nil {
@@ -367,6 +373,8 @@ func (b *Bot) runCommand(ctx context.Context, sender Sender, in Incoming, args [
 		} else {
 			out = b.cmdInvestigate(ctx, args[1:])
 		}
+	case "eshop":
+		out = b.cmdEshop()
 	default:
 		out = fmt.Sprintf("unknown command %q (try `%s help`)", args[0], b.prefix)
 	}
@@ -395,7 +403,7 @@ func (b *Bot) routeText(in Incoming, content string) (string, bool) {
 // isCommand reports whether name is a built-in command.
 func isCommand(name string) bool {
 	switch name {
-	case "help", "run", "investigate":
+	case "help", "run", "investigate", "eshop":
 		return true
 	}
 	return false
@@ -404,8 +412,9 @@ func isCommand(name string) bool {
 func usage(prefix string) string {
 	return fmt.Sprintf("**Pakka** — connection diagnostics\n"+
 		"`%s run [scenario] [fixture|live]` — run checks (default: all-pass fixture)\n"+
-		"`%s investigate [fixture [scenario]|live] <symptoms>` — diagnose a problem (ops channels only)",
-		prefix, prefix)
+		"`%s investigate [fixture [scenario]|live] <symptoms>` — diagnose a problem (ops channels only)\n"+
+		"`%s eshop` — eShop update watch status",
+		prefix, prefix, prefix)
 }
 
 // cmdRun executes a diagnostic suite: `run [scenario] [fixture|live]`.
@@ -475,6 +484,44 @@ func (b *Bot) cmdInvestigate(ctx context.Context, args []string) string {
 	}
 	for _, r := range results {
 		fmt.Fprintf(&sb, "`%s` %s\n", r.CheckID, r.Outcome)
+	}
+	return sb.String()
+}
+
+// cmdEshop reports the eShop update watch status.
+func (b *Bot) cmdEshop() string {
+	if b.eshopWatcher == nil {
+		return "eShop watcher not configured"
+	}
+	snap := b.eshopWatcher.Snapshot()
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "**eShop watch** — %d tracked, %d behind upstream", snap.Watched, snap.Behind)
+	if snap.CatalogDown {
+		fmt.Fprintf(&sb, "\ncatalog unreachable: %s", snap.LastErr)
+	} else if !snap.LastPoll.IsZero() {
+		fmt.Fprintf(&sb, "; last poll %s ago", time.Since(snap.LastPoll).Round(time.Second))
+	} else {
+		sb.WriteString("; no poll yet")
+	}
+	for _, behind := range snap.BehindTitles {
+		served := behind.Shipped
+		if served == "" {
+			served = "4TU build"
+		}
+		fmt.Fprintf(&sb, "\n`%s` %s → %s", behind.Name, served, behind.Latest)
+	}
+	if !snap.TriggerSet {
+		sb.WriteString("\nsync: not configured (daily timer covers drift)")
+	} else if snap.Trigger.Running {
+		fmt.Fprintf(&sb, "\nsync: running since %s", snap.Trigger.LastStart.Format(time.RFC3339))
+	} else if snap.Trigger.LastStart.IsZero() {
+		sb.WriteString("\nsync: idle, no run yet")
+	} else {
+		result := "failed"
+		if snap.Trigger.LastOK {
+			result = "ok"
+		}
+		fmt.Fprintf(&sb, "\nsync: last run %s (%s)", result, snap.Trigger.LastInfo)
 	}
 	return sb.String()
 }

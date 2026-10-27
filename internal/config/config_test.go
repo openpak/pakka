@@ -21,6 +21,10 @@ func clearEnv(t *testing.T) {
 		"PAKKA_DISCORD_BUG_CHANNEL",
 		"PAKKA_DISCORD_MODLOG_CHANNEL", "PAKKA_DISCORD_OPS_ALERTS_CHANNEL",
 		"PAKKA_LOG_WATCH_UNITS", "PAKKA_DISCORD_GATEWAY",
+		"PAKKA_ESHOP_API_BASE", "PAKKA_ESHOP_INTERNAL_KEY", "PAKKA_ESHOP_SOURCES",
+		"PAKKA_ESHOP_INTERVAL", "PAKKA_GITHUB_TOKEN", "GITHUB_TOKEN",
+		"PAKKA_ESHOP_SYNC_COMMAND", "PAKKA_ESHOP_SYNC_TIMEOUT", "PAKKA_ESHOP_SYNC_COOLDOWN",
+		"PAKKA_DISCORD_ALERTS_CHANNEL", "PAKKA_DISCORD_ANNOUNCE_CHANNEL",
 	} {
 		t.Setenv(key, "")
 	}
@@ -105,6 +109,42 @@ func TestMetaFallbackVars(t *testing.T) {
 	t.Setenv("PAKKA_META_API_KEY", "primary-key")
 	if cfg := Load(); cfg.MetaAPIKey != "primary-key" {
 		t.Errorf("PAKKA_ prefix should win: %+v", cfg)
+	}
+}
+
+func TestEshopDefaults(t *testing.T) {
+	clearEnv(t)
+	cfg := Load()
+	if cfg.EshopAPIBase != "" || cfg.AlertsChannel != "" || cfg.EshopAnnounceChannel != "" {
+		t.Errorf("eshop enabled by default: %+v", cfg)
+	}
+	if cfg.EshopInterval != time.Hour || cfg.EshopSyncTimeout != 2*time.Hour || cfg.EshopSyncCooldown != 6*time.Hour {
+		t.Errorf("eshop durations = %s/%s/%s", cfg.EshopInterval, cfg.EshopSyncTimeout, cfg.EshopSyncCooldown)
+	}
+}
+
+func TestEshopOverrides(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("PAKKA_ESHOP_API_BASE", "http://shop:20070")
+	t.Setenv("PAKKA_ESHOP_INTERNAL_KEY", "k")
+	t.Setenv("PAKKA_ESHOP_INTERVAL", "30m")
+	t.Setenv("GITHUB_TOKEN", "gh")
+	t.Setenv("PAKKA_ESHOP_SYNC_COMMAND", "./run-hb.sh sync")
+	t.Setenv("PAKKA_DISCORD_ALERTS_CHANNEL", "staff1")
+	t.Setenv("PAKKA_DISCORD_ANNOUNCE_CHANNEL", "public1")
+	cfg := Load()
+	if cfg.EshopAPIBase != "http://shop:20070" || cfg.EshopInternalKey != "k" {
+		t.Errorf("eshop api not applied: %+v", cfg)
+	}
+	if cfg.EshopInterval != 30*time.Minute || cfg.GitHubToken != "gh" || cfg.EshopSyncCommand != "./run-hb.sh sync" {
+		t.Errorf("eshop overrides not applied: %+v", cfg)
+	}
+	if cfg.AlertsChannel != "staff1" || cfg.EshopAnnounceChannel != "public1" {
+		t.Errorf("eshop channels not applied: %+v", cfg)
+	}
+	t.Setenv("PAKKA_GITHUB_TOKEN", "pk")
+	if cfg := Load(); cfg.GitHubToken != "pk" {
+		t.Errorf("PAKKA_ prefix should win for github token: %+v", cfg)
 	}
 }
 

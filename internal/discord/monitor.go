@@ -106,10 +106,41 @@ type Monitor struct {
 	prober    Prober
 	announce  Announcer
 	channelID string
+	alerts    Announcer // nil = no staff-alerts mirror
+	alertsID  string
 	log       *slog.Logger
 	mu        sync.RWMutex
 	states    map[string]bool
 	baselined bool
+}
+
+// SetAlertsMirror also posts tagged transitions to the staff alerts
+// channel; targets named "Area/service" render as [Area - service].
+func (m *Monitor) SetAlertsMirror(a Announcer, channelID string) {
+	m.alerts, m.alertsID = a, channelID
+}
+
+// AlertTag renders a target's alerts-channel tag: "Area/service" names
+// keep their taxonomy, plain names fall under Status.
+func AlertTag(name string) string {
+	if area, service, ok := strings.Cut(name, "/"); ok {
+		area, service = strings.TrimSpace(area), strings.TrimSpace(service)
+		if area != "" && service != "" {
+			return "[" + area + " - " + service + "]"
+		}
+	}
+	return "[Status - " + name + "]"
+}
+
+// shortName strips the area off an "Area/service" target for the message
+// body; the tag already carries it.
+func shortName(name string) string {
+	if _, service, ok := strings.Cut(name, "/"); ok {
+		if service = strings.TrimSpace(service); service != "" {
+			return service
+		}
+	}
+	return name
 }
 
 // TargetState is one target's last known state.
@@ -186,6 +217,15 @@ func (m *Monitor) check(ctx context.Context) {
 		}
 		if err := m.announce.Announce(m.channelID, msg); err != nil {
 			m.log.Error("status announce failed", "target", t.Name, "err", err)
+		}
+		if m.alerts != nil && m.alertsID != "" {
+			state := "is DOWN — " + detail
+			if up {
+				state = "is back UP — " + detail
+			}
+			if err := m.alerts.Announce(m.alertsID, AlertTag(t.Name)+" "+shortName(t.Name)+" "+state); err != nil {
+				m.log.Error("alerts mirror failed", "target", t.Name, "err", err)
+			}
 		}
 	}
 	m.mu.Lock()
