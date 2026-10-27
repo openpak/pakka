@@ -148,9 +148,13 @@ releases rate limit. A new upstream release posts `[Switch - eshop] ...`
 to alerts and, with `PAKKA_ESHOP_SYNC_COMMAND` set (e.g. hbstore-tools
 `./run-hb.sh sync` on a host with the toolchain and keys), triggers the
 pipeline that builds the new NSP and publishes it — single-flight with
-`PAKKA_ESHOP_SYNC_TIMEOUT` and `PAKKA_ESHOP_SYNC_COOLDOWN`. When the new
-version lands in the catalog, Pakka posts the standardized update notice
-to #announcements. The first poll only baselines, so restarts never flood.
+`PAKKA_ESHOP_SYNC_TIMEOUT` and `PAKKA_ESHOP_SYNC_COOLDOWN`. When new
+versions land in the catalog, Pakka posts to #announcements: one update
+keeps its own notice, several landing in the same poll share a single
+digest listing. A drifted title that still hasn't landed six hours after
+its release was announced gets one `[Switch - eshop] … failed to update`
+staff alert instead of public silence. The first poll only baselines, so
+restarts never flood.
 
 ## Community
 

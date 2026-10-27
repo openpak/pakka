@@ -512,7 +512,7 @@ func (b *Bot) cmdEshop() string {
 		fmt.Fprintf(&sb, "\n`%s` %s → %s", behind.Name, served, behind.Latest)
 	}
 	if !snap.TriggerSet {
-		sb.WriteString("\nsync: not configured (daily timer covers drift)")
+		sb.WriteString("\nsync: not configured (hourly timer covers drift)")
 	} else if snap.Trigger.Running {
 		fmt.Fprintf(&sb, "\nsync: running since %s", snap.Trigger.LastStart.Format(time.RFC3339))
 	} else if snap.Trigger.LastStart.IsZero() {

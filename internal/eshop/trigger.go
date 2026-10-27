@@ -48,7 +48,7 @@ func (t *CommandTrigger) Request(reason string, post func(msg string)) (bool, st
 	if !t.lastStart.IsZero() {
 		if wait := t.cooldown - time.Since(t.lastStart); wait > 0 {
 			t.mu.Unlock()
-			return false, fmt.Sprintf("sync cooling down (%s left) — the daily sync will pick it up", wait.Round(time.Minute))
+			return false, fmt.Sprintf("sync cooling down (%s left) — the hourly sync will pick it up", wait.Round(time.Minute))
 		}
 	}
 	t.running = true

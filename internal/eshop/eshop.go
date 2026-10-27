@@ -88,6 +88,12 @@ type titleState struct {
 	seen    string // tag@published_at last observed upstream
 	shipped string // tag recorded in the catalog source URL
 	name    string
+	// drift tracks the announced-but-unlanded upstream release for the
+	// failed-update alert: tag@published_at, when announced, and whether
+	// the failure was already reported.
+	drift      string
+	driftSince time.Time
+	reminded   bool
 }
 
 // BehindTitle is one title whose upstream is newer than the store.
@@ -131,6 +137,9 @@ type Watcher struct {
 	lastPoll  time.Time
 	lastErr   string
 	down      bool
+	// stuckAfter is how long a drift may go unlanded before it counts
+	// as failed (six hourly sync chances by default).
+	stuckAfter time.Duration
 }
 
 // New builds the watcher; sources maps 4TU package names to repo slugs and
@@ -144,6 +153,7 @@ func New(catalog Catalog, releases Releases, trigger Trigger, staff, public Anno
 		catalog: catalog, releases: releases, trigger: trigger,
 		staff: staff, public: public, staffID: staffID, publicID: publicID,
 		byTitle: byTitle, log: log, states: map[string]*titleState{},
+		stuckAfter: 6 * time.Hour,
 	}
 }
 
@@ -192,20 +202,39 @@ func (w *Watcher) RunOnce(ctx context.Context) {
 	if wasDown {
 		w.postStaff("[Switch - eshop] catalog reachable again.")
 	}
+	var landed []landedUpdate
 	for _, t := range titles {
 		if !t.Published {
 			continue
 		}
-		w.checkTitle(ctx, t, baselined)
+		if lu, ok := w.checkTitle(ctx, t, baselined); ok {
+			landed = append(landed, lu)
+		}
+	}
+	// One public post per poll: a single update keeps its own
+	// announcement, several land as one digest listing.
+	switch len(landed) {
+	case 0:
+	case 1:
+		w.postPublic(announceUpdate(landed[0].title))
+	default:
+		w.postPublic(announceDigest(landed))
 	}
 	w.mu.Lock()
 	w.baselined = true
 	w.mu.Unlock()
 }
 
-// checkTitle handles one published title: landed-version announcements
-// first (any source), then upstream drift (tracked titles only).
-func (w *Watcher) checkTitle(ctx context.Context, t Title, baselined bool) {
+// landedUpdate is one title whose served version increased this poll.
+type landedUpdate struct {
+	title     Title
+	prevLabel string
+}
+
+// checkTitle handles one published title: landed-version detection first
+// (any source; the caller batches the public post), then upstream drift
+// (tracked titles only). It reports a landed update for the digest.
+func (w *Watcher) checkTitle(ctx context.Context, t Title, baselined bool) (landedUpdate, bool) {
 	slug, shipped, _ := ParseReleaseSource(t.Source)
 	if slug == "" {
 		w.mu.Lock()
@@ -222,40 +251,48 @@ func (w *Watcher) checkTitle(ctx context.Context, t Title, baselined bool) {
 	st.version, st.label, st.slug, st.shipped, st.name = t.Version, t.VersionLabel, slug, shipped, t.Name
 	w.mu.Unlock()
 
+	var landed landedUpdate
+	isLanded := false
 	if !baselined || !seen {
 		if baselined && !seen {
 			w.postStaff(fmt.Sprintf("[Switch - eshop] **%s** is new on the eShop (%s).", t.Name, displayLabel(t.VersionLabel)))
 		}
 		// Newly seen titles still record upstream state below without alerting.
 	} else if t.Version > prevVersion {
-		w.postPublic(announceUpdate(t))
+		landed, isLanded = landedUpdate{title: t, prevLabel: prevLabel}, true
 		w.postStaff(fmt.Sprintf("[Switch - eshop] **%s** %s → **%s** landed on the eShop (announced in #announcements).",
 			t.Name, displayLabel(prevLabel), t.VersionLabel))
 	}
 	if slug == "" {
-		return
+		return landed, isLanded
 	}
 	rel, ok, err := w.releases.Latest(ctx, slug)
 	if err != nil {
 		w.log.Error("eshop watch: release lookup failed", "slug", slug, "err", err)
-		return
+		return landed, isLanded
 	}
 	if !ok {
-		return
+		return landed, isLanded
 	}
 	current := rel.Tag + "@" + rel.PublishedAt
 	w.mu.Lock()
 	st.seen = current
 	w.mu.Unlock()
-	if !baselined || !seen || current == prevSeen {
-		return
+	if !baselined || !seen {
+		return landed, isLanded
+	}
+	if msg := w.checkStuck(t, st, shipped); msg != "" {
+		w.postStaff(msg)
+	}
+	if current == prevSeen {
+		return landed, isLanded
 	}
 	// A new upstream release (moved tag or moved rolling-tag date).
 	served := shipped
 	if served == "" {
 		served = "a 4TU build"
 	}
-	syncNote := "no sync command configured — the daily sync will pick it up"
+	syncNote := "no sync command configured — the hourly sync will pick it up"
 	if w.trigger != nil {
 		reason := fmt.Sprintf("%s: %s -> %s", t.Name, served, rel.Tag)
 		if started, note := w.trigger.Request(reason, w.postStaff); started {
@@ -266,6 +303,37 @@ func (w *Watcher) checkTitle(ctx context.Context, t Title, baselined bool) {
 	}
 	w.postStaff(fmt.Sprintf("[Switch - eshop] **%s** has a new upstream release **%s** (`%s`); store serves %s. %s.",
 		t.Name, rel.Tag, slug, served, syncNote))
+	w.mu.Lock()
+	st.drift, st.driftSince, st.reminded = current, time.Now(), false
+	w.mu.Unlock()
+	return landed, isLanded
+}
+
+// checkStuck reports a drifted title whose update never lands: the
+// upstream release was announced, the grace period passed, and the store
+// still serves an older tag. Fires once per drift tag; landing or a newer
+// release re-arms it. It returns the staff message, posted by the caller
+// outside the lock.
+func (w *Watcher) checkStuck(t Title, st *titleState, shipped string) string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if st.drift == "" || st.reminded {
+		return ""
+	}
+	if shipped != "" && shipped == seenTag(st.drift) {
+		st.drift, st.reminded = "", false
+		return ""
+	}
+	if time.Since(st.driftSince) < w.stuckAfter {
+		return ""
+	}
+	st.reminded = true
+	served := shipped
+	if served == "" {
+		served = "a 4TU build"
+	}
+	return fmt.Sprintf("[Switch - eshop] **%s** failed to update to **%s** — store still serves %s. Check the sync log.",
+		t.Name, seenTag(st.drift), served)
 }
 
 // Snapshot returns the watch state for `!pakka eshop`; safe for concurrent use.
@@ -336,6 +404,28 @@ func announceUpdate(t Title) string {
 		t.Name, displayLabel(t.VersionLabel))
 	if excerpt := changelogExcerpt(t.Changelog); excerpt != "" {
 		fmt.Fprintf(&sb, "\n> %s", excerpt)
+	}
+	return sb.String()
+}
+
+// announceDigest renders one public post listing every title that landed
+// this poll. The list is capped to stay under Discord's message limit;
+// the overflow counts as one closing line, never a second post.
+func announceDigest(landed []landedUpdate) string {
+	const maxLen = 1900
+	var sb strings.Builder
+	fmt.Fprintf(&sb, ":arrow_up: **%d homebrew updates** are available on the OpenPak eShop. Update from the eShop to play the latest versions.", len(landed))
+	shown := 0
+	for _, lu := range landed {
+		line := fmt.Sprintf("\n- **%s** updated to **%s**", lu.title.Name, displayLabel(lu.title.VersionLabel))
+		if sb.Len()+len(line) > maxLen {
+			break
+		}
+		sb.WriteString(line)
+		shown++
+	}
+	if left := len(landed) - shown; left > 0 {
+		fmt.Fprintf(&sb, "\n…and %d more.", left)
 	}
 	return sb.String()
 }
