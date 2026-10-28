@@ -376,3 +376,101 @@ func TestSnapshotBehindList(t *testing.T) {
 		t.Errorf("last poll = %v", snap.LastPoll)
 	}
 }
+
+func TestLandingClearsStaleSourceDrift(t *testing.T) {
+	// MapRando-NX replay: drift announced, then the release lands while
+	// distribution.source still points at the old tag (github_sync never
+	// rewrites it). Past grace, no failure may fire: the landing resolved
+	// the drift.
+	cat := &fakeCatalog{titles: []Title{ftpdBase}}
+	frel := &fakeReleases{latest: map[string]Release{"mtheall/ftpd": mkrel("v3.2.1", "2026-10-01T00:00:00Z")}, has: map[string]bool{"mtheall/ftpd": true}}
+	w, staff, _ := testWatcher(cat, frel, &fakeTrigger{})
+	w.stuckAfter = time.Hour
+	ctx := context.Background()
+	w.RunOnce(ctx)
+	frel.latest["mtheall/ftpd"] = mkrel("v3.2.2", "2026-10-20T00:00:00Z")
+	w.RunOnce(ctx) // drift announced
+	landed := ftpdBase
+	landed.Version, landed.VersionLabel = 131072, "v3.2.2"
+	// Source deliberately NOT updated: the sync left the old tag URL.
+	cat.titles = []Title{landed}
+	w.RunOnce(ctx) // landed
+	w.mu.Lock()
+	w.states[strings.ToLower(ftpdBase.TitleID)].driftSince = time.Now().Add(-2 * time.Hour)
+	w.mu.Unlock()
+	w.RunOnce(ctx) // past grace
+	for _, p := range staff.posts {
+		if strings.Contains(p, "failed to update") {
+			t.Fatalf("failure after landing with stale source: %v", staff.posts)
+		}
+	}
+}
+
+func TestSamePollLandingSkipsDriftAlert(t *testing.T) {
+	// Release and landing observed in one poll: only the landed note
+	// posts, no "new upstream release" drift alert, even when the served
+	// label differs textually from the tag (labels are normalized on some
+	// sync paths). A rebuild landing without the awaited release stays
+	// visible via the behind list instead of alerting here.
+	for _, label := range []string{"v3.2.2", "3.2.2"} {
+		cat := &fakeCatalog{titles: []Title{ftpdBase}}
+		frel := &fakeReleases{latest: map[string]Release{"mtheall/ftpd": mkrel("v3.2.1", "2026-10-01T00:00:00Z")}, has: map[string]bool{"mtheall/ftpd": true}}
+		w, staff, public := testWatcher(cat, frel, &fakeTrigger{})
+		ctx := context.Background()
+		w.RunOnce(ctx)
+		landed := ftpdBase
+		landed.Version, landed.VersionLabel = 131072, label
+		cat.titles = []Title{landed}
+		frel.latest["mtheall/ftpd"] = mkrel("v3.2.2", "2026-10-20T00:00:00Z")
+		w.RunOnce(ctx)
+		if len(public.posts) != 1 {
+			t.Fatalf("label %s: public posts = %v", label, public.posts)
+		}
+		if len(staff.posts) != 1 || !strings.Contains(staff.posts[0], "landed") {
+			t.Fatalf("label %s: staff posts = %v, want landed note only", label, staff.posts)
+		}
+	}
+}
+
+func TestBehindExcusesServedLabel(t *testing.T) {
+	// The behind list trusts the live served label as well as the source
+	// tag, so a landed release with a stale source URL is not behind.
+	cat := &fakeCatalog{titles: []Title{ftpdBase}}
+	frel := &fakeReleases{latest: map[string]Release{"mtheall/ftpd": mkrel("v3.2.2", "2026-10-20T00:00:00Z")}, has: map[string]bool{"mtheall/ftpd": true}}
+	w, _, _ := testWatcher(cat, frel, &fakeTrigger{})
+	ctx := context.Background()
+	w.RunOnce(ctx)
+	if snap := w.Snapshot(); snap.Behind != 1 {
+		t.Fatalf("behind before landing = %+v", snap)
+	}
+	landed := ftpdBase
+	landed.Version, landed.VersionLabel = 131072, "v3.2.2"
+	cat.titles = []Title{landed}
+	w.RunOnce(ctx)
+	if snap := w.Snapshot(); snap.Watched != 1 || snap.Behind != 0 {
+		t.Fatalf("behind after landing = %+v", snap)
+	}
+}
+
+func TestDriftServesLiveLabel(t *testing.T) {
+	// Drift and stuck text name the catalog's live served label, not the
+	// possibly stale source tag.
+	cat := &fakeCatalog{titles: []Title{ftpdBase}}
+	frel := &fakeReleases{latest: map[string]Release{"mtheall/ftpd": mkrel("v3.2.1", "2026-10-01T00:00:00Z")}, has: map[string]bool{"mtheall/ftpd": true}}
+	w, staff, _ := testWatcher(cat, frel, &fakeTrigger{})
+	w.stuckAfter = time.Hour
+	ctx := context.Background()
+	w.RunOnce(ctx)
+	frel.latest["mtheall/ftpd"] = mkrel("v3.2.2", "2026-10-20T00:00:00Z")
+	w.RunOnce(ctx)
+	if len(staff.posts) != 1 || !strings.Contains(staff.posts[0], "store serves 3.2.1") {
+		t.Fatalf("drift posts = %v", staff.posts)
+	}
+	w.mu.Lock()
+	w.states[strings.ToLower(ftpdBase.TitleID)].driftSince = time.Now().Add(-2 * time.Hour)
+	w.mu.Unlock()
+	w.RunOnce(ctx)
+	if len(staff.posts) != 2 || !strings.Contains(staff.posts[1], "store still serves 3.2.1") {
+		t.Fatalf("stuck posts = %v", staff.posts)
+	}
+}

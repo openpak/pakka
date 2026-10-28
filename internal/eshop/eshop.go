@@ -262,6 +262,13 @@ func (w *Watcher) checkTitle(ctx context.Context, t Title, baselined bool) (land
 		landed, isLanded = landedUpdate{title: t, prevLabel: prevLabel}, true
 		w.postStaff(fmt.Sprintf("[Switch - eshop] **%s** %s → **%s** landed on the eShop (announced in #announcements).",
 			t.Name, displayLabel(prevLabel), t.VersionLabel))
+		// A landing resolves any tracked drift: the store moved, so the
+		// awaited release is no longer outstanding. The source URL the
+		// stuck check compares against is only rewritten on some sync
+		// paths, so it cannot be the clearing signal on its own.
+		w.mu.Lock()
+		st.drift, st.reminded = "", false
+		w.mu.Unlock()
 	}
 	if slug == "" {
 		return landed, isLanded
@@ -281,6 +288,13 @@ func (w *Watcher) checkTitle(ctx context.Context, t Title, baselined bool) (land
 	if !baselined || !seen {
 		return landed, isLanded
 	}
+	if isLanded {
+		// Release and landing arrived in the same poll: the landed note
+		// above already covers it, so no drift alert and no stuck
+		// tracking. A rebuild landing without the awaited release stays
+		// visible in the `!pakka eshop` behind list instead.
+		return landed, isLanded
+	}
 	if msg := w.checkStuck(t, st, shipped); msg != "" {
 		w.postStaff(msg)
 	}
@@ -288,7 +302,12 @@ func (w *Watcher) checkTitle(ctx context.Context, t Title, baselined bool) (land
 		return landed, isLanded
 	}
 	// A new upstream release (moved tag or moved rolling-tag date).
-	served := shipped
+	// The served version comes from the catalog's live label: the source
+	// URL lags it on sync paths that never rewrite distribution.source.
+	served := t.VersionLabel
+	if served == "" {
+		served = shipped
+	}
 	if served == "" {
 		served = "a 4TU build"
 	}
@@ -328,7 +347,10 @@ func (w *Watcher) checkStuck(t Title, st *titleState, shipped string) string {
 		return ""
 	}
 	st.reminded = true
-	served := shipped
+	served := t.VersionLabel
+	if served == "" {
+		served = shipped
+	}
 	if served == "" {
 		served = "a 4TU build"
 	}
@@ -353,7 +375,9 @@ func (w *Watcher) Snapshot() Status {
 		}
 		snap.Watched++
 		latest := seenTag(st.seen)
-		if st.seen != "" && latest != st.shipped {
+		// Behind unless the store serves the latest release: the served
+		// label is the live signal, the source tag the durable one.
+		if st.seen != "" && latest != st.shipped && latest != st.label {
 			snap.Behind++
 			if len(snap.BehindTitles) < 10 {
 				snap.BehindTitles = append(snap.BehindTitles, BehindTitle{Name: st.name, Shipped: st.shipped, Latest: latest})
