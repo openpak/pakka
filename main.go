@@ -87,7 +87,7 @@ func run() error {
 		log.Info("log watcher disabled: needs bot plus alert channels")
 	}
 	pub, writer := startPublisher(ctx, cfg, bot, metaClient, log)
-	chatSvc := startChat(ctx, investigator, model, log)
+	chatSvc := startChat(ctx, cfg, investigator, model, log)
 	srv := &http.Server{
 		Addr: cfg.Addr,
 		Handler: server.New(server.Options{
@@ -261,11 +261,23 @@ func startPublisher(ctx context.Context, cfg config.Config, b *discord.Bot, mc *
 
 // startChat starts the player chat service when PAKKA_CHAT_KEY is set. It
 // shares this one Pakka process; there is no second service.
-func startChat(ctx context.Context, inv *investigate.Investigator, model investigate.Model, log *slog.Logger) *chat.Service {
+//
+// The chat model is the process model unless PAKKA_CHAT_META_API_KEY is set, which gives chat
+// its own Meta credentials (and PAKKA_CHAT_META_MODEL its own model id), so enabling chat does
+// not switch the Discord and publisher features on or change their model.
+func startChat(ctx context.Context, cfg config.Config, inv *investigate.Investigator, model investigate.Model, log *slog.Logger) *chat.Service {
 	ccfg := chat.LoadConfig(os.Getenv("PAKKA_STATE_DIR"))
 	if ccfg.Key == "" {
 		log.Info("player chat disabled: no PAKKA_CHAT_KEY")
 		return nil
+	}
+	if key := os.Getenv("PAKKA_CHAT_META_API_KEY"); key != "" {
+		id := os.Getenv("PAKKA_CHAT_META_MODEL")
+		if id == "" {
+			id = cfg.MetaModel
+		}
+		model = investigate.ClientModel{Client: meta.NewClient(cfg.MetaAPIBase, key, id, 60*time.Second)}
+		log.Info("player chat uses its own model credentials", "model", id)
 	}
 	agent := &chat.Agent{
 		Model:   model,

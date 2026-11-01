@@ -29,6 +29,8 @@ to `PAKKA_CHAT_DIAGNOSES_PER_HOUR` (3). Conversations live under
 `PAKKA_STATE_DIR/chat` for `PAKKA_CHAT_RETENTION` (30 days); at most
 `PAKKA_CHAT_MAX_CONVERSATIONS` (30) per account. Counters are in memory.
 
+Model: `PAKKA_CHAT_META_API_KEY` (optional) gives chat its own Meta credentials, and `PAKKA_CHAT_META_MODEL` its own model id; otherwise chat uses the process model.
+
 Tools: `docs_search` (docs.openpak.org search index), `service_status`,
 `my_consoles`, `my_friends`, `my_rewards`, `diagnose_connection` (existing
 investigator, read-only). There are no write tools. See `data-use.md` for what is
