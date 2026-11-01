@@ -35,6 +35,9 @@ Keep answers short; use plain text with short lists when helpful. Say plainly wh
 // tools are the model-visible definitions. None takes an account argument.
 func tools() []meta.Tool {
 	obj := func(props map[string]any, req ...string) map[string]any {
+		if req == nil {
+			req = []string{} // the API rejects "required": null
+		}
 		return map[string]any{"type": "object", "properties": props, "required": req}
 	}
 	def := func(name, desc string, params map[string]any) meta.Tool {

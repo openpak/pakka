@@ -473,3 +473,13 @@ func TestDocsSearch(t *testing.T) {
 		t.Errorf("%s", out)
 	}
 }
+
+func TestToolSchemasSerialiseForTheAPI(t *testing.T) {
+	b, err := json.Marshal(tools())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), `"required":null`) {
+		t.Errorf("a tool schema carries required:null, which the model API rejects: %s", b)
+	}
+}
