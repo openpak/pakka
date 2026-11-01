@@ -21,6 +21,7 @@ import (
 	"pakka/internal/eshop"
 	"pakka/internal/investigate"
 	"pakka/internal/meta"
+	"pakka/internal/publisher"
 	"pakka/internal/server"
 )
 
@@ -83,6 +84,7 @@ func run() error {
 	} else {
 		log.Info("log watcher disabled: needs bot plus alert channels")
 	}
+	pub, writer := startPublisher(ctx, cfg, bot, metaClient, log)
 	srv := &http.Server{
 		Addr: cfg.Addr,
 		Handler: server.New(server.Options{
@@ -90,6 +92,8 @@ func run() error {
 			Investigator: investigator,
 			Model:        model,
 			LogWatcher:   watcher,
+			Publisher:    pub,
+			Writer:       writer,
 			MaxRuns:      cfg.MaxRuns,
 			Log:          log,
 		}).Handler(),
@@ -191,4 +195,62 @@ func startWelcomer(ctx context.Context, cfg config.Config, b *discord.Bot, log *
 		cfg.DiscordWelcomeInterval, cfg.DiscordPrefix, log)
 	go w.Run(ctx)
 	log.Info("welcomer started", "guild", ch.GuildID)
+}
+
+// metaWriter lets the publisher use the Meta model for drafts. Its output is
+// only ever queued for staff review.
+type metaWriter struct{ c *meta.Client }
+
+func (w metaWriter) Write(ctx context.Context, system, user string) (string, error) {
+	reply, err := w.c.Chat(ctx, []meta.Message{
+		{Role: meta.RoleSystem, Content: system},
+		{Role: meta.RoleUser, Content: user},
+	}, nil)
+	return reply.Content, err
+}
+
+// startPublisher builds the publisher when OpenVerse is configured: the
+// official-account posts, the News mirror, the review queue and the staff
+// commands. Run on one host only, like the eShop watcher.
+func startPublisher(ctx context.Context, cfg config.Config, b *discord.Bot, mc *meta.Client, log *slog.Logger) (*publisher.Service, publisher.Writer) {
+	pcfg := publisher.LoadConfig(os.Getenv)
+	if !pcfg.Enabled() {
+		log.Info("publisher disabled: needs PAKKA_OPENVERSE_URL and PAKKA_OPENVERSE_KEY")
+		return nil, nil
+	}
+	var ov publisher.OpenVerse = publisher.NewOpenVerse(pcfg.OpenVerseURL, pcfg.OpenVerseKey, 0)
+	var news publisher.NewsAdmin
+	if pcfg.NewsBase != "" {
+		news = publisher.NewNews(pcfg.NewsBase, pcfg.NewsKey, 0)
+	}
+	svc, err := publisher.New(pcfg, ov, news, log)
+	if err != nil {
+		log.Error("publisher disabled: cannot start", "err", err)
+		return nil, nil
+	}
+	if b != nil && cfg.AlertsChannel != "" {
+		ann := discord.SenderAnnouncer{Sender: b.RedactingSender()}
+		svc.Notify = func(msg string) {
+			if err := ann.Announce(cfg.AlertsChannel, msg); err != nil {
+				log.Warn("publisher staff notice failed", "err", err)
+			}
+		}
+	}
+	if b != nil {
+		b.SetPublisher(svc)
+	}
+	var w publisher.Writer
+	if mc != nil {
+		w = metaWriter{mc}
+	}
+	if news != nil {
+		go svc.RunMirror(ctx, pcfg.MirrorInterval)
+	}
+	go svc.RunHighlights(ctx, w, pcfg.HighlightsEvery)
+	cats := make([]string, 0, len(pcfg.Categories))
+	for c := range pcfg.Categories {
+		cats = append(cats, c)
+	}
+	log.Info("publisher started", "killed", svc.Killed(), "categories", cats, "news", news != nil, "admin_api", pcfg.AdminKey != "")
+	return svc, w
 }

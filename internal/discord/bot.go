@@ -58,6 +58,7 @@ type Bot struct {
 	agentMonitor *Monitor
 	agentWatcher *LogWatcher
 	eshopWatcher *eshop.Watcher
+	publisher    PublisherAdmin    // nil = no publish commands
 	staff        map[string]string // post_notice name -> channel ID
 	router       *Router           // nil = support routing disabled
 	ownID        string
@@ -337,7 +338,7 @@ func (b *Bot) runAgent(ctx context.Context, sender Sender, in Incoming, question
 	}
 	notice := Redacting(sender, b.redactExtra...)
 	ag := &Agent{
-		model: b.model, runner: b.runner,
+		model: b.model, runner: b.runner, pub: b.publisher,
 		monitor: b.agentMonitor, watcher: b.agentWatcher,
 		poster: func(channel, message string) error {
 			id, ok := b.staff[channel]
@@ -376,6 +377,8 @@ func (b *Bot) runCommand(ctx context.Context, sender Sender, in Incoming, args [
 		}
 	case "eshop":
 		out = b.cmdEshop()
+	case "publish":
+		out = b.cmdPublish(ctx, in, args[1:])
 	default:
 		out = fmt.Sprintf("unknown command %q (try `%s help`)", args[0], b.prefix)
 	}
@@ -404,7 +407,7 @@ func (b *Bot) routeText(in Incoming, content string) (string, bool) {
 // isCommand reports whether name is a built-in command.
 func isCommand(name string) bool {
 	switch name {
-	case "help", "run", "investigate", "eshop":
+	case "help", "run", "investigate", "eshop", "publish":
 		return true
 	}
 	return false
@@ -414,8 +417,9 @@ func usage(prefix string) string {
 	return fmt.Sprintf("**Pakka** — connection diagnostics\n"+
 		"`%s run [scenario] [fixture|live]` — run checks (default: all-pass fixture)\n"+
 		"`%s investigate [fixture [scenario]|live] <symptoms>` — diagnose a problem (ops channels only)\n"+
-		"`%s eshop` — eShop update watch status",
-		prefix, prefix, prefix)
+		"`%s eshop` — eShop update watch status\n"+
+		"`%s publish list|show|approve|reject` — publishing review queue (staff only)",
+		prefix, prefix, prefix, prefix)
 }
 
 // cmdRun executes a diagnostic suite: `run [scenario] [fixture|live]`.

@@ -10,6 +10,8 @@ Start service integration with allowlisted read-only tools and short-lived reque
 
 Deploy as an independently built container, following existing OpenPak service conventions after confirming current deployment requirements. Include health/readiness, graceful shutdown, bounded concurrency, request timeouts, structured redacted logs and server-only secret injection. No deployment has been implemented yet.
 
+Publishing (OpenVerse posts as the official account, News articles, a staff review queue) is described in [publisher.md](publisher.md).
+
 ## Components
 
 1. Entry adapters: console interfaces and, later, community integrations start a support session.

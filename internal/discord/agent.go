@@ -13,6 +13,7 @@ import (
 	"pakka/internal/diagnostics"
 	"pakka/internal/investigate"
 	"pakka/internal/meta"
+	"pakka/internal/publisher"
 )
 
 // Agent steps bound one mention turn.
@@ -26,8 +27,10 @@ type Agent struct {
 	watcher *LogWatcher // nil = recent_alerts unavailable
 	// poster sends a notice to a staff channel ("modlog", "ops", "status", "alerts").
 	poster func(channel, message string) error
-	steps  int
-	log    *slog.Logger
+	// pub serves the propose_* tools: the model may only queue drafts for staff. nil = off.
+	pub   PublisherAdmin
+	steps int
+	log   *slog.Logger
 }
 
 const agentSystem = `You are Pakka, a moderator assistant for the OpenPak Discord. Answer the moderator's question briefly in chat (a few lines, no JSON).
@@ -36,6 +39,7 @@ Rules:
 - Use tools for facts; never invent service states, errors, or diagnostics.
 - service_status shows the monitored services; recent_alerts shows what the log watcher caught; diagnostics_run runs live checks.
 - post_notice posts to a staff channel (modlog, ops, status, alerts) — ONLY when explicitly asked to post, announce, or notify, and say what you posted.
+- propose_post, propose_community and propose_news only DRAFT: a staff member approves them with the publish approve command before anything is published. Say that a draft was queued, never that it was published.
 - Never reveal infrastructure details (IPs, tokens, paths); the channel redacts them anyway.`
 
 // AgentTools returns the agent's tool definitions.
@@ -85,7 +89,7 @@ func (a *Agent) Run(ctx context.Context, question string) (string, error) {
 	}
 	lastText := ""
 	for range steps {
-		reply, err := a.model.Complete(ctx, messages, AgentTools())
+		reply, err := a.model.Complete(ctx, messages, a.tools())
 		if err != nil {
 			return "", err
 		}
@@ -134,9 +138,23 @@ func (a *Agent) executeTool(ctx context.Context, tc meta.ToolCall) string {
 		channel, _ := args["channel"].(string)
 		message, _ := args["message"].(string)
 		return a.toolPost(channel, message)
+	case "propose_post", "propose_community", "propose_news":
+		if a.pub == nil {
+			return `{"error":"publishing is not configured"}`
+		}
+		return a.pub.ExecModelTool(ctx, tc.Function.Name, tc.Function.Arguments)
 	default:
 		return `{"error":"unknown tool"}`
 	}
+}
+
+// tools is the base tool set plus, when publishing is on, the propose tools.
+func (a *Agent) tools() []meta.Tool {
+	t := AgentTools()
+	if a.pub != nil {
+		t = append(t, publisher.ModelTools()...)
+	}
+	return t
 }
 
 func (a *Agent) toolDiagnostics(ctx context.Context) string {

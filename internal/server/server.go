@@ -11,6 +11,7 @@ import (
 	"pakka/internal/diagnostics"
 	"pakka/internal/discord"
 	"pakka/internal/investigate"
+	"pakka/internal/publisher"
 )
 
 // maxBody caps run requests; targets never come from the body.
@@ -24,6 +25,8 @@ type Options struct {
 	Investigator *investigate.Investigator
 	Model        investigate.Model
 	LogWatcher   *discord.LogWatcher
+	Publisher    *publisher.Service // nil = publisher API off
+	Writer       publisher.Writer   // drafts the weekly highlights; nil = plain list
 	MaxRuns      int
 	Log          *slog.Logger
 }
@@ -34,6 +37,8 @@ type Server struct {
 	investigator *investigate.Investigator
 	model        investigate.Model
 	logWatcher   *discord.LogWatcher
+	publisher    *publisher.Service
+	writer       publisher.Writer
 	sem          chan struct{}
 	log          *slog.Logger
 }
@@ -49,6 +54,8 @@ func New(opts Options) *Server {
 		investigator: opts.Investigator,
 		model:        opts.Model,
 		logWatcher:   opts.LogWatcher,
+		publisher:    opts.Publisher,
+		writer:       opts.Writer,
 		sem:          make(chan struct{}, maxRuns),
 		log:          opts.Log,
 	}
@@ -62,6 +69,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/runs", s.createRun)
 	mux.HandleFunc("POST /v1/investigations", s.createInvestigation)
 	mux.HandleFunc("POST /v1/log-events", s.createLogEvent)
+	s.registerPublisher(mux)
 	return mux
 }
 
