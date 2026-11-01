@@ -243,9 +243,19 @@ func startPublisher(ctx context.Context, cfg config.Config, b *discord.Bot, mc *
 	if b != nil {
 		b.SetPublisher(svc)
 	}
+	// The highlights writer: the process model, or its own credentials when
+	// PAKKA_PUBLISH_META_API_KEY is set (so the publisher can be given a model
+	// without switching the Discord features on). Its text is only ever a draft.
 	var w publisher.Writer
 	if mc != nil {
 		w = metaWriter{mc}
+	}
+	if key := os.Getenv("PAKKA_PUBLISH_META_API_KEY"); key != "" {
+		id := os.Getenv("PAKKA_PUBLISH_META_MODEL")
+		if id == "" {
+			id = cfg.MetaModel
+		}
+		w = metaWriter{meta.NewClient(cfg.MetaAPIBase, key, id, 60*time.Second)}
 	}
 	if news != nil {
 		go svc.RunMirror(ctx, pcfg.MirrorInterval)

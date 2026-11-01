@@ -831,3 +831,34 @@ func TestRegistryListsEveryToolWithItsScope(t *testing.T) {
 		}
 	}
 }
+
+func TestPlainHighlightsAreGrammaticalAndFree(t *testing.T) {
+	one := plainHighlights([]TopPost{{Community: "Drawing", Body: "see https://evil.example"}})
+	if !strings.Contains(one, "1 post earned") || !strings.Contains(one, "Drawing") || strings.Contains(one, "evil") {
+		t.Fatal(one)
+	}
+	if many := plainHighlights([]TopPost{{}, {}}); !strings.Contains(many, "2 posts earned") {
+		t.Fatal(many)
+	}
+}
+
+func TestDeletePostIsStaffOnlyAndAudited(t *testing.T) {
+	s, _, _ := newSvc(t, CatAnnounce)
+	ctx := context.Background()
+	if err := s.DeletePost(ctx, Model(), "pk1"); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("model delete: %v", err)
+	}
+	if err := s.DeletePost(ctx, System("x"), "pk1"); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("system delete: %v", err)
+	}
+	if err := s.DeletePost(ctx, Staff("a"), "pk1"); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, e := range s.Audit().Recent(0) {
+		got = append(got, e.Event)
+	}
+	if !strings.Contains(strings.Join(got, ","), "deleted") {
+		t.Fatalf("not audited: %v", got)
+	}
+}

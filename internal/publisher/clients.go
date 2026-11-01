@@ -257,7 +257,7 @@ type HTTPNews struct{ h httpJSON }
 // NewNews builds the News admin client.
 func NewNews(base, key string, timeout time.Duration) *HTTPNews {
 	if timeout <= 0 {
-		timeout = 5 * time.Minute // publish signs every container
+		timeout = 25 * time.Minute // publish signs every container (20-40 min under load)
 	}
 	return &HTTPNews{httpJSON{"news admin", strings.TrimRight(base, "/"), key, &http.Client{Timeout: timeout}}}
 }

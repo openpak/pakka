@@ -49,10 +49,17 @@ Tool scopes: `openverse:post`, `openverse:community`, `news:publish`, `boss:queu
 
 ## Configuration
 
-`PAKKA_OPENVERSE_URL`, `PAKKA_OPENVERSE_KEY` (the OpenVerse `PN_MIIVERSE_API_OFFICIAL_KEY`), `PAKKA_NEWS_ADMIN_BASE`, `PAKKA_NEWS_ADMIN_KEY`, `PAKKA_PUBLISH_ADMIN_KEY`, `PAKKA_PUBLISH_CATEGORIES`, `PAKKA_PUBLISH_KILL`, `PAKKA_PUBLISH_MIRROR_INTERVAL` (default 10m, 0 = off), `PAKKA_PUBLISH_HIGHLIGHTS_EVERY` (default 0 = manual only), `PAKKA_VERSE_URL`, `PAKKA_STATE_DIR`. Without the OpenVerse URL and key the publisher is off. Run it on one host only.
+`PAKKA_OPENVERSE_URL`, `PAKKA_OPENVERSE_KEY` (the OpenVerse `PN_MIIVERSE_API_OFFICIAL_KEY`), `PAKKA_NEWS_ADMIN_BASE`, `PAKKA_NEWS_ADMIN_KEY`, `PAKKA_PUBLISH_ADMIN_KEY`, `PAKKA_PUBLISH_CATEGORIES`, `PAKKA_PUBLISH_KILL`, `PAKKA_PUBLISH_MIRROR_INTERVAL` (default 10m, 0 = off), `PAKKA_PUBLISH_HIGHLIGHTS_EVERY` (default 0 = manual only), `PAKKA_VERSE_URL`, `PAKKA_STATE_DIR`, `PAKKA_PUBLISH_META_API_KEY` / `PAKKA_PUBLISH_META_MODEL` (the highlights writer's own model credentials; without any model the weekly draft is a plain count with community names). Without the OpenVerse URL and key the publisher is off. Run it on one host only.
 
 ## Admin API
 
 All need `X-Admin-Key`; with no admin key set they answer 404. `X-Approver` names the person for the audit log. Localhost and the private network only.
 
-`GET /v1/publisher/status`, `GET /v1/publisher/drafts?status=pending|all`, `POST /v1/publisher/drafts` (queue an action), `POST /v1/publisher/drafts/{id}/approve`, `.../reject`, `POST /v1/publisher/run` (staff publish now), `POST /v1/publisher/events`, `POST /v1/publisher/mirror` (`{topic, news_id}`), `POST /v1/publisher/mirror/run`, `POST /v1/publisher/highlights/run`, `POST /v1/publisher/kill`, `GET /v1/publisher/audit?n=`.
+`GET /v1/publisher/status`, `GET /v1/publisher/drafts?status=pending|all`, `POST /v1/publisher/drafts` (queue an action), `POST /v1/publisher/drafts/{id}/approve`, `.../reject`, `POST /v1/publisher/run` (staff publish now), `POST /v1/publisher/events`, `POST /v1/publisher/mirror` (`{topic, news_id}`), `POST /v1/publisher/mirror/run`, `POST /v1/publisher/highlights/run`, `POST /v1/publisher/kill`, `GET /v1/publisher/audit?n=`, `DELETE /v1/publisher/posts/{id}` (remove one of Pakka's own OpenVerse posts; rollback and test cleanup, audited).
+
+## Known limits
+
+- `news.publish` goes through the News admin API (create article, publish). Consoles read News from nx-bcat; while nx-bcat serves its static tree (`NX_BCAT_SYNC_URL` unset) an article published this way does not reach consoles. The News to OpenVerse mirror does not depend on that.
+- The Discord approval commands need the process that holds the queue to have the Discord gateway. In prod the publisher runs on the REST-only instance, so approvals go through the admin API there.
+- The website `/admin` queue page is not built.
+- Splatfest, tournament and course posts wait for those game servers to call `POST /v1/publisher/events`.

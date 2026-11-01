@@ -413,3 +413,25 @@ func truncRunes(s string, n int) string {
 }
 
 func validUTF8(s string) bool { return utf8.ValidString(s) }
+
+// DeletePost removes one of Pakka's own OpenVerse posts (rollback, test
+// cleanup). Staff only, audited; OpenVerse only ever deletes Pakka's posts.
+func (s *Service) DeletePost(ctx context.Context, by Actor, id string) error {
+	if s.ov == nil {
+		return ErrNotConfigured
+	}
+	a := Action{Tool: ToolPost, EventID: id}
+	if !by.Scopes[ScopeOpenVersePost] || !by.Scopes[ScopeApprove] {
+		return s.deny(by, a, ErrForbidden)
+	}
+	if err := s.audit.Record(AuditEntry{Actor: by.Name, Event: "attempt", Tool: ToolPost, EventID: id, Detail: "delete post"}); err != nil {
+		return fmt.Errorf("refusing to delete: %w", err)
+	}
+	err := s.ov.DeletePost(ctx, id)
+	ev := AuditEntry{Actor: by.Name, Tool: ToolPost, EventID: id, Event: "deleted"}
+	if err != nil {
+		ev.Event, ev.Detail = "failed", err.Error()
+	}
+	_ = s.audit.Record(ev)
+	return err
+}

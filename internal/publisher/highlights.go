@@ -50,7 +50,7 @@ func (s *Service) DraftHighlights(ctx context.Context, w Writer, now time.Time) 
 	}
 	text = cleanModelText(text)
 	if text == "" {
-		text = fmt.Sprintf("Best of OpenVerse this week: %d posts got the most Yeahs. Have a look and say hi!", len(top))
+		text = plainHighlights(top)
 	}
 	year, week := now.ISOWeek()
 	a := Action{
@@ -98,4 +98,26 @@ func (s *Service) RunHighlights(ctx context.Context, w Writer, every time.Durati
 			cancel()
 		}
 	}
+}
+
+// plainHighlights is the fallback text when no model wrote one: counts and
+// community names only, nothing a player typed.
+func plainHighlights(top []TopPost) string {
+	seen := map[string]bool{}
+	var names []string
+	for _, p := range top {
+		if p.Community != "" && !seen[p.Community] && len(names) < 3 {
+			seen[p.Community] = true
+			names = append(names, p.Community)
+		}
+	}
+	noun := "posts"
+	if len(top) == 1 {
+		noun = "post"
+	}
+	out := fmt.Sprintf("This week %d %s earned the most Yeahs", len(top), noun)
+	if len(names) > 0 {
+		out += " in " + strings.Join(names, ", ")
+	}
+	return out + ". Have a look and say hi!"
 }

@@ -34,6 +34,7 @@ func (s *Server) registerPublisher(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/publisher/highlights/run", h(s.pubHighlights))
 	mux.HandleFunc("POST /v1/publisher/kill", h(s.pubKill))
 	mux.HandleFunc("GET /v1/publisher/audit", h(s.pubAudit))
+	mux.HandleFunc("DELETE /v1/publisher/posts/{id}", h(s.pubDeletePost))
 }
 
 func keyEqual(a, b string) bool {
@@ -256,4 +257,17 @@ func (s *Server) pubAudit(w http.ResponseWriter, r *http.Request) {
 		n = 50
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"entries": s.publisher.Audit().Recent(n)})
+}
+
+// pubDeletePost removes one of Pakka's own OpenVerse posts (rollback).
+func (s *Server) pubDeletePost(w http.ResponseWriter, r *http.Request) {
+	if err := s.publisher.DeletePost(r.Context(), approver(r), r.PathValue("id")); err != nil {
+		if publisher.IsStatus(err, http.StatusNotFound) {
+			writeError(w, http.StatusNotFound, "no such post")
+			return
+		}
+		pubError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"deleted": true})
 }
