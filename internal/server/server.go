@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"pakka/internal/chat"
 	"pakka/internal/diagnostics"
 	"pakka/internal/discord"
 	"pakka/internal/investigate"
@@ -27,6 +28,7 @@ type Options struct {
 	LogWatcher   *discord.LogWatcher
 	Publisher    *publisher.Service // nil = publisher API off
 	Writer       publisher.Writer   // drafts the weekly highlights; nil = plain list
+	Chat         *chat.Service
 	MaxRuns      int
 	Log          *slog.Logger
 }
@@ -39,6 +41,7 @@ type Server struct {
 	logWatcher   *discord.LogWatcher
 	publisher    *publisher.Service
 	writer       publisher.Writer
+	chat         *chat.Service
 	sem          chan struct{}
 	log          *slog.Logger
 }
@@ -56,6 +59,7 @@ func New(opts Options) *Server {
 		logWatcher:   opts.LogWatcher,
 		publisher:    opts.Publisher,
 		writer:       opts.Writer,
+		chat:         opts.Chat,
 		sem:          make(chan struct{}, maxRuns),
 		log:          opts.Log,
 	}
@@ -70,6 +74,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/investigations", s.createInvestigation)
 	mux.HandleFunc("POST /v1/log-events", s.createLogEvent)
 	s.registerPublisher(mux)
+	if s.chat != nil && s.chat.Enabled() {
+		s.chat.Mount(mux)
+	}
 	return mux
 }
 

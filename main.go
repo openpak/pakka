@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -15,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"pakka/internal/chat"
 	"pakka/internal/config"
 	"pakka/internal/diagnostics"
 	"pakka/internal/discord"
@@ -85,6 +87,7 @@ func run() error {
 		log.Info("log watcher disabled: needs bot plus alert channels")
 	}
 	pub, writer := startPublisher(ctx, cfg, bot, metaClient, log)
+	chatSvc := startChat(ctx, investigator, model, log)
 	srv := &http.Server{
 		Addr: cfg.Addr,
 		Handler: server.New(server.Options{
@@ -94,6 +97,7 @@ func run() error {
 			LogWatcher:   watcher,
 			Publisher:    pub,
 			Writer:       writer,
+			Chat:         chatSvc,
 			MaxRuns:      cfg.MaxRuns,
 			Log:          log,
 		}).Handler(),
@@ -253,4 +257,42 @@ func startPublisher(ctx context.Context, cfg config.Config, b *discord.Bot, mc *
 	}
 	log.Info("publisher started", "killed", svc.Killed(), "categories", cats, "news", news != nil, "admin_api", pcfg.AdminKey != "")
 	return svc, w
+}
+
+// startChat starts the player chat service when PAKKA_CHAT_KEY is set. It
+// shares this one Pakka process; there is no second service.
+func startChat(ctx context.Context, inv *investigate.Investigator, model investigate.Model, log *slog.Logger) *chat.Service {
+	ccfg := chat.LoadConfig(os.Getenv("PAKKA_STATE_DIR"))
+	if ccfg.Key == "" {
+		log.Info("player chat disabled: no PAKKA_CHAT_KEY")
+		return nil
+	}
+	agent := &chat.Agent{
+		Model:   model,
+		Docs:    chat.NewDocs(ccfg.DocsIndexURL, ccfg.DocsBaseURL),
+		Website: chat.NewWebsite(ccfg.WebsiteURL, ccfg.Key),
+	}
+	if model != nil {
+		agent.Diagnose = func(ctx context.Context, symptoms string) (string, error) {
+			f, results, err := inv.Run(ctx, model, chat.Sanitize(symptoms))
+			if err != nil {
+				return "", err
+			}
+			type row struct{ Check, Outcome, Summary string }
+			rows := []row{}
+			for _, r := range results {
+				rows = append(rows, row{r.CheckID, string(r.Outcome), r.Summary})
+			}
+			b, _ := json.Marshal(map[string]any{"finding": f, "checks": rows})
+			return string(b), nil
+		}
+	}
+	svc, err := chat.New(ccfg, agent, log)
+	if err != nil {
+		log.Error("player chat disabled", "err", err)
+		return nil
+	}
+	go svc.Run(ctx)
+	log.Info("player chat enabled", "model_configured", model != nil)
+	return svc
 }
