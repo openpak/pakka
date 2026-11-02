@@ -4,8 +4,6 @@ OpenPak's planned AI assistant for players and network maintainers, powered by M
 
 [OpenPak](https://github.com/openpak) is an open-source, multi-console network where players can keep their identity, friends and community across devices. Multiplayer compatibility depends on each game.
 
-**Status: project preparation and design. No running agent, model integration, console client or deployment is implemented yet.**
-
 ## What we are building
 
 Pakka will investigate connection problems, collect diagnostic evidence, suggest repairs and verify the outcome. Console homebrew apps and dashboards are intended entry points, starting with selected platforms.

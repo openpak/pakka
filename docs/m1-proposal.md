@@ -1,8 +1,8 @@
-# M1 proposal: evidence (agreed 2026-10-26)
+# M1 proposal: evidence
 
 Planning document for Milestone 1 of [Implementation plan](plan.md).
-No implementation exists yet; implementation starts at the recorded event
-boundary (see [HACKATHON.md](../HACKATHON.md)).
+Implementation starts at the recorded event boundary (see
+[HACKATHON.md](../HACKATHON.md)).
 
 ## Decisions
 
