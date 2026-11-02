@@ -159,6 +159,11 @@ restarts never flood.
 - [OpenPak](https://openpak.org)
 - [Discord](https://discord.gg/U8S8eApwq)
 
+## Docs
+
+- [Protocol](docs/protocol.md): HTTP API, Discord commands, background jobs.
+- [Deploy](docs/deploy.md): build, image, environment, multi-host.
+
 ## License
 
 AGPL-3.0-only. See [LICENSE](LICENSE).
