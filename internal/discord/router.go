@@ -209,6 +209,15 @@ func NewRouterFromConfig(cfg config.Config, client *meta.Client) *Router {
 		cfg.SupportSetupChannel, cfg.SupportConnectionChannel, cfg.SupportBugChannel, time.Hour, slog.Default())
 }
 
+// Scoped reports whether the channel is a routed support channel.
+func (r *Router) Scoped(channelID string) bool {
+	if r == nil {
+		return false
+	}
+	_, ok := r.scopes[channelID]
+	return ok
+}
+
 // Route returns a redirect message when in is an out-of-scope support
 // question; false means handle the message normally.
 func (r *Router) Route(in Incoming) (string, bool) {

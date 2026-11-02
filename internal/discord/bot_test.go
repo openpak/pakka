@@ -63,6 +63,70 @@ func TestIgnoresNonCommands(t *testing.T) {
 	}
 }
 
+func TestHandleFAQ(t *testing.T) {
+	newRouted := func() *Bot {
+		b := testBot()
+		b.router = NewRouter(keywordClassifier{}, "help1", "", "bug1", time.Hour, b.log)
+		b.faq = NewFAQ("match1", time.Hour, b.log)
+		return b
+	}
+	in := incoming("how do I install the patcher on my sd card")
+	in.ChannelID = "help1"
+	posts := handle(t, newRouted(), in)
+	if len(posts) != 1 || !strings.Contains(posts[0], "switch-patcher/releases") {
+		t.Errorf("in-scope faq posts = %v", posts)
+	}
+	// Out-of-scope redirects win over FAQ answers.
+	out := incoming("how do I install the patcher on my sd card")
+	out.ChannelID = "bug1"
+	posts = handle(t, newRouted(), out)
+	if len(posts) != 1 || !strings.Contains(posts[0], "faster help") {
+		t.Errorf("out-of-scope posts = %v", posts)
+	}
+	// Prefixed text never triggers FAQ.
+	cmd := incoming("!pakka install the patcher on my sd card")
+	cmd.ChannelID = "help1"
+	posts = handle(t, newRouted(), cmd)
+	if len(posts) != 1 || !strings.Contains(posts[0], "unknown command") {
+		t.Errorf("prefixed posts = %v", posts)
+	}
+}
+
+func TestAckCommands(t *testing.T) {
+	newAcked := func() *Bot {
+		b := testBot()
+		targets := ParseTargets("Core/accounts=https://x.invalid/")
+		prober := funcProber(func(_ context.Context, _ Target) (bool, string) { return true, "ok" })
+		b.agentMonitor = NewMonitor(targets, time.Minute, prober, &fakeAnnouncer{}, "status1", b.log)
+		return b
+	}
+	posts := handle(t, newAcked(), incoming("!pakka ack"))
+	if len(posts) != 1 || !strings.Contains(posts[0], "nothing acked") {
+		t.Errorf("bare ack = %v", posts)
+	}
+	b := newAcked()
+	posts = handle(t, b, incoming("!pakka ack accounts 30m"))
+	if len(posts) != 1 || !strings.Contains(posts[0], "acked **Core/accounts** for 30m") {
+		t.Errorf("ack = %v", posts)
+	}
+	posts = handle(t, b, incoming("!pakka ack"))
+	if len(posts) != 1 || !strings.Contains(posts[0], "Core/accounts") {
+		t.Errorf("ack list = %v", posts)
+	}
+	posts = handle(t, b, incoming("!pakka ack nope"))
+	if len(posts) != 1 || !strings.Contains(posts[0], "unknown target") {
+		t.Errorf("bad ack = %v", posts)
+	}
+	posts = handle(t, b, incoming("!pakka unack accounts"))
+	if len(posts) != 1 || !strings.Contains(posts[0], "unacked") {
+		t.Errorf("unack = %v", posts)
+	}
+	posts = handle(t, testBot(), incoming("!pakka ack a"))
+	if len(posts) != 1 || !strings.Contains(posts[0], "not configured") {
+		t.Errorf("ack without monitor = %v", posts)
+	}
+}
+
 func TestHelp(t *testing.T) {
 	for _, content := range []string{"!pakka help", "!pakka", "!pakka   "} {
 		posts := handle(t, testBot(), incoming(content))

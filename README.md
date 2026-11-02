@@ -100,15 +100,24 @@ everywhere). `investigate` can be further restricted with
 Status monitor: with `PAKKA_DISCORD_STATUS_CHANNEL` and
 `PAKKA_STATUS_TARGETS` (`name=https://...` or `name=tcp://host:port`,
 comma-separated) set, the bot polls every `PAKKA_STATUS_INTERVAL` (default
-60s) and posts up/down transitions to the status channel. The first poll
-only baselines, so restarts never flood. With
-`PAKKA_DISCORD_ALERTS_CHANNEL` set, transitions are also mirrored there as
-tagged staff alerts (`[Area - service] ...` for targets named
-`Area/service`, `[Status - name]` otherwise).
+60s) and posts up/down transitions to the status channel. DOWN pages only
+after `PAKKA_STATUS_DOWN_AFTER` consecutive failures (default 3), and the
+posts carry triage inline: failing duration and bad-poll count going down,
+outage length coming back up. The first poll only baselines, so restarts
+never flood. With `PAKKA_DISCORD_ALERTS_CHANNEL` set, transitions are also
+mirrored there as tagged staff alerts (`[Area - service] ...` for targets
+named `Area/service`, `[Status - name]` otherwise). `!pakka ack <service>
+[duration]` silences a flapping target (default 1h, recovery clears
+early); bare `!pakka ack` lists. `PAKKA_STATUS_DEPENDS`
+(`child=parent,...`) suppresses cascade pages: a child failing while its
+parent is posted-down stays silent, and pages if still failing once the
+parent recovers.
 
-Welcomer: with `PAKKA_DISCORD_WELCOME_CHANNEL` set, the bot tags members who
-joined since the previous pass every `PAKKA_DISCORD_WELCOME_INTERVAL`
+Welcomer: with `PAKKA_DISCORD_WELCOME_CHANNEL` set, the bot greets members
+who joined since the previous pass every `PAKKA_DISCORD_WELCOME_INTERVAL`
 (default 15m). Needs the Server Members intent enabled on the bot page.
+Each newcomer gets the patcher links and support pointers by DM; members
+with DMs closed fall back to a channel tag.
 
 Support routing: with `PAKKA_DISCORD_SETUP_CHANNEL` (help) and
 `PAKKA_DISCORD_BUG_CHANNEL` set, the bot classifies messages in those
@@ -116,7 +125,15 @@ channels with the model (keywords cover API failures) and redirects
 out-of-scope questions to the right one (one redirect per user per hour).
 `PAKKA_DISCORD_CONNECTION_CHANNEL` is optional: set it for three-channel
 routing, empty merges connection questions into help. Unsure cases stay
-silent rather than misrouting.
+silent rather than misrouting. In-scope questions the router leaves alone
+get a curated FAQ answer when one matches clearly (patcher install,
+homebrew updates, connection error codes, finding players, supported
+consoles); every answer invites a human follow-up, and misses stay silent
+for the humans.
+
+Matchmaking sweep: with `PAKKA_DISCORD_MATCHMAKING_CHANNEL` set, the bot
+deletes posts older than `PAKKA_MATCHMAKING_MAX_AGE` (default 24h) every
+hour, so the single LFG channel stays fresh. Pins are never touched.
 
 Log watching: each monitored host runs a journal shipper (a user service
 piping `journalctl --user --follow -o json` into `POST /v1/log-events`).
@@ -149,10 +166,40 @@ pipeline that builds the new NSP and publishes it — single-flight with
 `PAKKA_ESHOP_SYNC_TIMEOUT` and `PAKKA_ESHOP_SYNC_COOLDOWN`. When new
 versions land in the catalog, Pakka posts to #announcements: one update
 keeps its own notice, several landing in the same poll share a single
-digest listing. A drifted title that still hasn't landed six hours after
-its release was announced gets one `[Switch - eshop] … failed to update`
-staff alert instead of public silence. The first poll only baselines, so
-restarts never flood.
+digest listing. Brand-new titles get the same treatment: one arrival keeps
+its own `:new:` notice, several share a single listing. A drifted title
+that still hasn't landed six hours after its release was announced gets
+one `[Switch - eshop] … failed to update` staff alert instead of public
+silence. Every `PAKKA_ESHOP_DIGEST_INTERVAL` (default 168h) Pakka posts
+one staff digest of titles stuck behind upstream. The first poll only
+baselines, so restarts never flood. After each sync, run-hb.sh posts the
+broken-package set to `POST /v1/eshop-broken`; packages still broken after
+`PAKKA_ESHOP_BROKEN_AFTER` (default 168h) get one staff alert, batched.
+Broken first-seen persists under `PAKKA_STATE_DIR` (empty keeps memory
+only); mount it as a volume or redeploys reset the clock.
+
+Game landings: with `PAKKA_NEWS_ADMIN_BASE` (default
+`http://openpak-news-experiment:20043`), `PAKKA_NEWS_ADMIN_KEY` and both
+announce channels set, `POST /v1/land` (`name`, optional 16-hex `title_id`,
+optional one-paragraph `blurb`) lands a game end to end: a news channel for
+the game, launch articles in OpenPak Games, OpenPak News and the new
+channel, publish to consoles, a #announcements post, and a staff report.
+Re-landing an existing channel answers 409; partial failures name the step
+and what completed, and page staff. Run from the workstation with
+`clients/tools/land-game.sh "Name" [title-id] [blurb...]`.
+
+Deploy confirmations: `POST /v1/announce` (`channel`, `text`) relays one
+operator post to Discord (localhost-only, redacted, 2000 chars max).
+Verify `/healthz` first, then confirm from the workstation with
+`clients/tools/pakka-announce.sh <channel-id> <text...>` — e.g.
+`[Switch - nx-baas] deployed v1.2.3, healthy` to #alerts.
+
+Release watch: with `PAKKA_RELEASE_WATCH` (comma-separated openpak/*
+repos) set, Pakka nudges staff once a repo's latest release ages past
+`PAKKA_RELEASE_STALE_AFTER` (default 72h) without a newer one:
+`[Releases - pakka] v0.8.0 released 4d ago — confirm it's deployed.` The
+first sight of a tag baselines silently, so pre-existing old releases
+never nag; state persists under `PAKKA_STATE_DIR`.
 
 ## Community
 

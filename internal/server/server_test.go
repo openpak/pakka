@@ -15,9 +15,13 @@ import (
 	"pakka/internal/config"
 	"pakka/internal/diagnostics"
 	"pakka/internal/discord"
+	"pakka/internal/eshop"
 	"pakka/internal/evidence"
 	"pakka/internal/investigate"
 	"pakka/internal/meta"
+	"pakka/internal/news"
+
+	"github.com/bwmarrin/discordgo"
 )
 
 func testServer(model investigate.Model) *Server {
@@ -57,6 +61,111 @@ func TestHealthz(t *testing.T) {
 	}
 	if body["status"] != "ok" {
 		t.Errorf("body = %v, want status ok", body)
+	}
+}
+
+func TestEshopBrokenDisabled(t *testing.T) {
+	res := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/eshop-broken", strings.NewReader(`{"broken":{}}`))
+	testServer(nil).Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusServiceUnavailable {
+		t.Fatalf("code = %d, want 503", res.Code)
+	}
+}
+
+func TestEshopBrokenIngest(t *testing.T) {
+	ann := &stubAnnouncer{}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	srv := New(Options{
+		Broken:  eshop.NewBrokenTracker(ann, "staff1", time.Hour, "", log),
+		MaxRuns: 4,
+		Log:     log,
+	})
+	res := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/eshop-broken", strings.NewReader(`{"broken":{"ChunkIntercept":"27/10/2026"}}`))
+	srv.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("code = %d, body = %s", res.Code, res.Body.String())
+	}
+	res = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/v1/eshop-broken", strings.NewReader(`oops`))
+	srv.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("code = %d, want 400", res.Code)
+	}
+}
+
+func TestLandDisabled(t *testing.T) {
+	res := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/land", strings.NewReader(`{"name":"X"}`))
+	testServer(nil).Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusServiceUnavailable {
+		t.Fatalf("code = %d, want 503", res.Code)
+	}
+}
+
+func TestLandConflict(t *testing.T) {
+	admin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"topic_id":"openpak_x","name":"X"}`))
+	}))
+	defer admin.Close()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	ann := &stubAnnouncer{}
+	srv := New(Options{
+		Lander:  news.NewLander(news.NewClient(admin.URL, "k", time.Second), ann, ann, "staff1", "public1", log),
+		MaxRuns: 4,
+		Log:     log,
+	})
+	res := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/land", strings.NewReader(`{"name":"X"}`))
+	srv.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusConflict {
+		t.Fatalf("code = %d, body = %s", res.Code, res.Body.String())
+	}
+	res = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/v1/land", strings.NewReader(`oops`))
+	srv.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("code = %d, want 400", res.Code)
+	}
+}
+
+type stubSender struct {
+	posts []string
+}
+
+func (s *stubSender) ChannelMessageSend(_ string, content string, _ ...discordgo.RequestOption) (*discordgo.Message, error) {
+	s.posts = append(s.posts, content)
+	return &discordgo.Message{Content: content}, nil
+}
+
+func TestAnnounceRelay(t *testing.T) {
+	res := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/announce", strings.NewReader(`{"channel":"1","text":"hi"}`))
+	testServer(nil).Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusServiceUnavailable {
+		t.Fatalf("code = %d, want 503", res.Code)
+	}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	sender := &stubSender{}
+	srv := New(Options{Relay: sender, MaxRuns: 4, Log: log})
+	for body, want := range map[string]int{
+		`{"channel":"123","text":"deployed v1, healthy"}`:              http.StatusOK,
+		`{"channel":"abc","text":"hi"}`:                                http.StatusBadRequest,
+		`{"channel":"123","text":""}`:                                  http.StatusBadRequest,
+		`{"channel":"123","text":"` + strings.Repeat("x", 2001) + `"}`: http.StatusBadRequest,
+		`oops`: http.StatusBadRequest,
+	} {
+		res := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/v1/announce", strings.NewReader(body))
+		srv.Handler().ServeHTTP(res, req)
+		if res.Code != want {
+			t.Errorf("body %q: code = %d, want %d", body[:min(40, len(body))], res.Code, want)
+		}
+	}
+	if len(sender.posts) != 1 || !strings.Contains(sender.posts[0], "healthy") {
+		t.Errorf("relayed = %v", sender.posts)
 	}
 }
 

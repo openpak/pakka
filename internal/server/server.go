@@ -11,7 +11,9 @@ import (
 	"pakka/internal/chat"
 	"pakka/internal/diagnostics"
 	"pakka/internal/discord"
+	"pakka/internal/eshop"
 	"pakka/internal/investigate"
+	"pakka/internal/news"
 	"pakka/internal/publisher"
 )
 
@@ -20,7 +22,9 @@ const maxBody = 64 << 10
 
 // Options wires the server dependencies. Model may be nil when no API key
 // is configured; live investigations then report unavailable. LogWatcher
-// may be nil; log intake then reports disabled.
+// may be nil; log intake then reports disabled. Broken may be nil; broken
+// intake then reports disabled. Lander may be nil; landings then report
+// disabled. Relay may be nil; the announce relay then reports disabled.
 type Options struct {
 	Runner       *diagnostics.Runner
 	Investigator *investigate.Investigator
@@ -29,6 +33,9 @@ type Options struct {
 	Publisher    *publisher.Service // nil = publisher API off
 	Writer       publisher.Writer   // drafts the weekly highlights; nil = plain list
 	Chat         *chat.Service
+	Broken       *eshop.BrokenTracker
+	Lander       *news.Lander
+	Relay        discord.Sender
 	MaxRuns      int
 	Log          *slog.Logger
 }
@@ -42,6 +49,9 @@ type Server struct {
 	publisher    *publisher.Service
 	writer       publisher.Writer
 	chat         *chat.Service
+	broken       *eshop.BrokenTracker
+	lander       *news.Lander
+	relay        discord.Sender
 	sem          chan struct{}
 	log          *slog.Logger
 }
@@ -60,6 +70,9 @@ func New(opts Options) *Server {
 		publisher:    opts.Publisher,
 		writer:       opts.Writer,
 		chat:         opts.Chat,
+		broken:       opts.Broken,
+		lander:       opts.Lander,
+		relay:        opts.Relay,
 		sem:          make(chan struct{}, maxRuns),
 		log:          opts.Log,
 	}
@@ -77,6 +90,9 @@ func (s *Server) Handler() http.Handler {
 	if s.chat != nil && s.chat.Enabled() {
 		s.chat.Mount(mux)
 	}
+	mux.HandleFunc("POST /v1/eshop-broken", s.createEshopBroken)
+	mux.HandleFunc("POST /v1/land", s.createLanding)
+	mux.HandleFunc("POST /v1/announce", s.createAnnounce)
 	return mux
 }
 

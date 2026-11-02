@@ -23,7 +23,9 @@ import (
 	"pakka/internal/eshop"
 	"pakka/internal/investigate"
 	"pakka/internal/meta"
+	"pakka/internal/news"
 	"pakka/internal/publisher"
+	"pakka/internal/releases"
 	"pakka/internal/server"
 )
 
@@ -55,6 +57,9 @@ func run() error {
 	defer stop()
 
 	var bot *discord.Bot
+	var eshopBroken *eshop.BrokenTracker
+	var lander *news.Lander
+	var relay discord.Sender
 	if cfg.DiscordToken != "" {
 		b, err := discord.New(cfg, runner, investigator, model, metaClient, log)
 		if err != nil {
@@ -70,9 +75,13 @@ func run() error {
 			log.Info("discord gateway disabled: REST-only alerts mode")
 		}
 		bot = b
+		relay = b.RedactingSender()
 		startMonitor(ctx, cfg, b, log)
 		startWelcomer(ctx, cfg, b, log)
-		startEshop(ctx, cfg, b, log)
+		startMatchmaking(ctx, cfg, b, log)
+		eshopBroken = startEshop(ctx, cfg, b, log)
+		lander = startLanding(cfg, b, log)
+		startReleases(ctx, cfg, b, log)
 	} else {
 		log.Info("discord disabled: no bot token configured")
 	}
@@ -98,6 +107,9 @@ func run() error {
 			Publisher:    pub,
 			Writer:       writer,
 			Chat:         chatSvc,
+			Broken:       eshopBroken,
+			Lander:       lander,
+			Relay:        relay,
 			MaxRuns:      cfg.MaxRuns,
 			Log:          log,
 		}).Handler(),
@@ -139,6 +151,8 @@ func startMonitor(ctx context.Context, cfg config.Config, b *discord.Bot, log *s
 		discord.NewNetProber(cfg.CheckTimeout),
 		discord.SenderAnnouncer{Sender: b.RedactingSender()},
 		cfg.DiscordStatusChannel, log)
+	mon.SetDownAfter(cfg.StatusDownAfter)
+	mon.SetDepends(discord.ParseDepends(cfg.StatusDependsRaw))
 	if cfg.AlertsChannel != "" {
 		mon.SetAlertsMirror(discord.SenderAnnouncer{Sender: b.RedactingSender()}, cfg.AlertsChannel)
 	}
@@ -149,11 +163,12 @@ func startMonitor(ctx context.Context, cfg config.Config, b *discord.Bot, log *s
 
 // startEshop launches eShop update monitoring when the store API and both
 // announce channels are configured. Run on one host only: every instance
-// would otherwise post the same announcements.
-func startEshop(ctx context.Context, cfg config.Config, b *discord.Bot, log *slog.Logger) {
+// would otherwise post the same announcements. It returns the broken-build
+// tracker for the HTTP intake, or nil when the watcher is disabled.
+func startEshop(ctx context.Context, cfg config.Config, b *discord.Bot, log *slog.Logger) *eshop.BrokenTracker {
 	if cfg.EshopAPIBase == "" || cfg.AlertsChannel == "" || cfg.EshopAnnounceChannel == "" {
 		log.Info("eshop watcher disabled: needs api base plus staff and announce channels")
-		return
+		return nil
 	}
 	sources, err := eshop.ParseSources(cfg.EshopSources)
 	if err != nil {
@@ -178,8 +193,13 @@ func startEshop(ctx context.Context, cfg config.Config, b *discord.Bot, log *slo
 		cfg.AlertsChannel, cfg.EshopAnnounceChannel,
 		sources, log)
 	b.SetEshopWatcher(w)
+	tracker := eshop.NewBrokenTracker(
+		discord.SenderAnnouncer{Sender: b.RedactingSender()},
+		cfg.AlertsChannel, cfg.EshopBrokenAfter, cfg.StateDir, log)
 	go w.Run(ctx, cfg.EshopInterval)
+	go w.RunDigest(ctx, cfg.EshopDigestInterval)
 	log.Info("eshop watcher started", "sources", len(sources))
+	return tracker
 }
 
 // startWelcomer launches newcomer welcomes when a welcome channel is set.
@@ -196,7 +216,8 @@ func startWelcomer(ctx context.Context, cfg config.Config, b *discord.Bot, log *
 	w := discord.NewWelcomer(
 		discord.NewGuildLister(b.Session(), ch.GuildID),
 		b.RedactingSender(), cfg.DiscordWelcomeChannel,
-		cfg.DiscordWelcomeInterval, cfg.DiscordPrefix, log)
+		cfg.DiscordWelcomeInterval, cfg.DiscordPrefix, log).
+		WithDM(b.Session(), cfg.SupportSetupChannel)
 	go w.Run(ctx)
 	log.Info("welcomer started", "guild", ch.GuildID)
 }
@@ -317,4 +338,50 @@ func startChat(ctx context.Context, cfg config.Config, inv *investigate.Investig
 	go svc.Run(ctx)
 	log.Info("player chat enabled", "model_configured", model != nil)
 	return svc
+}
+
+// startLanding builds the game-landing flow when the news admin API and
+// both announce channels are configured. The staff channel is required:
+// landing failures must page somewhere.
+func startLanding(cfg config.Config, b *discord.Bot, log *slog.Logger) *news.Lander {
+	if cfg.NewsAdminKey == "" || cfg.EshopAnnounceChannel == "" || cfg.AlertsChannel == "" {
+		log.Info("game landing disabled: needs news admin key plus public and staff channels")
+		return nil
+	}
+	client := news.NewClient(cfg.NewsAdminBase, cfg.NewsAdminKey, 0)
+	log.Info("game landing enabled")
+	return news.NewLander(client,
+		discord.SenderAnnouncer{Sender: b.RedactingSender()},
+		discord.SenderAnnouncer{Sender: b.RedactingSender()},
+		cfg.AlertsChannel, cfg.EshopAnnounceChannel, log)
+}
+
+// startReleases launches the stale-release nudge when watched repos are
+// set. Run on one host only: every instance would post the same nudges.
+func startReleases(ctx context.Context, cfg config.Config, b *discord.Bot, log *slog.Logger) {
+	repos := releases.ParseRepos(cfg.ReleaseWatch)
+	if len(repos) == 0 || cfg.AlertsChannel == "" {
+		log.Info("release watch disabled: needs watched repos and a staff channel")
+		return
+	}
+	timeout := max(cfg.CheckTimeout, 30*time.Second)
+	w := releases.NewWatcher(
+		eshop.NewGitHubClient(cfg.GitHubToken, timeout),
+		repos, cfg.ReleaseStaleAfter,
+		discord.SenderAnnouncer{Sender: b.RedactingSender()},
+		cfg.AlertsChannel, cfg.StateDir, log)
+	go w.Run(ctx, time.Hour)
+	log.Info("release watch started", "repos", len(repos))
+}
+
+// startMatchmaking launches LFG post expiry when the matchmaking channel
+// is set. Run on one host only: every instance would delete the same posts.
+func startMatchmaking(ctx context.Context, cfg config.Config, b *discord.Bot, log *slog.Logger) {
+	if cfg.MatchmakingChannel == "" {
+		log.Info("matchmaking sweeper disabled: no channel configured")
+		return
+	}
+	s := discord.NewSweeper(b.Session(), cfg.MatchmakingChannel, cfg.MatchmakingMaxAge, time.Hour, log)
+	go s.Run(ctx)
+	log.Info("matchmaking sweeper started")
 }

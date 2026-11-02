@@ -98,6 +98,34 @@ type Config struct {
 	// EshopAnnounceChannel receives the standardized public post when an
 	// update lands (empty = eShop watcher disabled).
 	EshopAnnounceChannel string
+	// MatchmakingChannel is the single LFG channel the sweeper expires
+	// (empty = sweeper disabled). Also links the find-players FAQ answer.
+	MatchmakingChannel string
+	// MatchmakingMaxAge is how long an LFG post lives before expiring.
+	MatchmakingMaxAge time.Duration
+	// StatusDownAfter is how many consecutive failures page (damping).
+	StatusDownAfter int
+	// StatusDependsRaw lists monitor dependencies as child=parent pairs.
+	StatusDependsRaw string
+	// NewsAdminBase is the news admin API root (internal network only).
+	NewsAdminBase string
+	// NewsAdminKey is the X-Internal-Key for the news admin API.
+	NewsAdminKey string
+	// ReleaseWatch lists repos (openpak/* short names or full slugs) whose
+	// latest release is nudged once it ages past the rollout window.
+	// Empty disables the release watch.
+	ReleaseWatch string
+	// ReleaseStaleAfter is how old a release may get before staff is
+	// nudged to confirm its rollout.
+	ReleaseStaleAfter time.Duration
+	// EshopDigestInterval paces the staff digest of titles behind upstream.
+	EshopDigestInterval time.Duration
+	// EshopBrokenAfter is how long a package may stay in the sync's broken
+	// set before staff is alerted.
+	EshopBrokenAfter time.Duration
+	// StateDir persists watcher state across restarts (broken first-seen).
+	// Empty keeps memory only.
+	StateDir string
 }
 
 func getenv(key, def string) string {
@@ -160,6 +188,17 @@ func Load() Config {
 		EshopSyncCooldown:        getenvDuration("PAKKA_ESHOP_SYNC_COOLDOWN", 6*time.Hour),
 		AlertsChannel:            os.Getenv("PAKKA_DISCORD_ALERTS_CHANNEL"),
 		EshopAnnounceChannel:     os.Getenv("PAKKA_DISCORD_ANNOUNCE_CHANNEL"),
+		EshopDigestInterval:      getenvDuration("PAKKA_ESHOP_DIGEST_INTERVAL", 168*time.Hour),
+		EshopBrokenAfter:         getenvDuration("PAKKA_ESHOP_BROKEN_AFTER", 168*time.Hour),
+		StateDir:                 os.Getenv("PAKKA_STATE_DIR"),
+		MatchmakingChannel:       os.Getenv("PAKKA_DISCORD_MATCHMAKING_CHANNEL"),
+		MatchmakingMaxAge:        getenvDuration("PAKKA_MATCHMAKING_MAX_AGE", 24*time.Hour),
+		StatusDownAfter:          getenvInt("PAKKA_STATUS_DOWN_AFTER", 3),
+		StatusDependsRaw:         os.Getenv("PAKKA_STATUS_DEPENDS"),
+		NewsAdminBase:            getenv("PAKKA_NEWS_ADMIN_BASE", "http://openpak-news-experiment:20043"),
+		NewsAdminKey:             os.Getenv("PAKKA_NEWS_ADMIN_KEY"),
+		ReleaseWatch:             os.Getenv("PAKKA_RELEASE_WATCH"),
+		ReleaseStaleAfter:        getenvDuration("PAKKA_RELEASE_STALE_AFTER", 72*time.Hour),
 	}
 }
 

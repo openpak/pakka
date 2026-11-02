@@ -452,6 +452,78 @@ func TestBehindExcusesServedLabel(t *testing.T) {
 	}
 }
 
+func TestNewTitleAnnouncesPublic(t *testing.T) {
+	cat := &fakeCatalog{titles: []Title{ftpdBase}}
+	rel := &fakeReleases{latest: map[string]Release{"mtheall/ftpd": mkrel("v3.2.1", "2026-10-01T00:00:00Z")}, has: map[string]bool{"mtheall/ftpd": true}}
+	w, staff, public := testWatcher(cat, rel, &fakeTrigger{})
+	ctx := context.Background()
+	w.RunOnce(ctx) // baseline: silent
+	arrival := Title{TitleID: "01fe999999990000", Name: "NewBrew", Version: 65536,
+		VersionLabel: "1.0.0", Source: "https://switch.cdn.fortheusers.org/zips/newbrew.zip", Published: true}
+	cat.titles = []Title{ftpdBase, arrival}
+	w.RunOnce(ctx)
+	if len(public.posts) != 1 || !strings.Contains(public.posts[0], "NewBrew") ||
+		!strings.Contains(public.posts[0], "is new on the OpenPak eShop") {
+		t.Fatalf("public posts = %v", public.posts)
+	}
+	found := false
+	for _, p := range staff.posts {
+		found = found || strings.Contains(p, "is new on the eShop")
+	}
+	if !found {
+		t.Errorf("no staff new-title note: %v", staff.posts)
+	}
+}
+
+func TestNewTitlesDigestPublic(t *testing.T) {
+	cat := &fakeCatalog{titles: []Title{ftpdBase}}
+	w, _, public := testWatcher(cat, &fakeReleases{}, &fakeTrigger{})
+	ctx := context.Background()
+	w.RunOnce(ctx)
+	mknew := func(id, name string) Title {
+		return Title{TitleID: id, Name: name, Version: 65536, VersionLabel: "1.0", Published: true}
+	}
+	cat.titles = []Title{ftpdBase, mknew("01fe000000010000", "Alpha"), mknew("01fe000000020000", "Beta")}
+	w.RunOnce(ctx)
+	if len(public.posts) != 1 || !strings.Contains(public.posts[0], "2 new homebrew") ||
+		!strings.Contains(public.posts[0], "Alpha") || !strings.Contains(public.posts[0], "Beta") {
+		t.Fatalf("public posts = %v", public.posts)
+	}
+}
+
+func TestDigestOnce(t *testing.T) {
+	cat := &fakeCatalog{titles: []Title{ftpdBase, mtgnxBase}}
+	frel := &fakeReleases{
+		latest: map[string]Release{
+			"mtheall/ftpd":     mkrel("v3.2.2", "2026-10-20T00:00:00Z"),
+			"lostmaguss/mtgnx": mkrel("1.0.1", "2026-10-20T00:00:00Z"),
+		},
+		has: map[string]bool{"mtheall/ftpd": true, "lostmaguss/mtgnx": true},
+	}
+	w, staff, _ := testWatcher(cat, frel, &fakeTrigger{})
+	w.RunOnce(context.Background()) // baseline records both behind
+	w.DigestOnce()
+	if len(staff.posts) != 1 || !strings.Contains(staff.posts[0], "2 titles behind upstream") ||
+		!strings.Contains(staff.posts[0], "ftpd") || !strings.Contains(staff.posts[0], "MTGnx") {
+		t.Fatalf("digest posts = %v", staff.posts)
+	}
+	// Sorted by name for stable posts.
+	if strings.Index(staff.posts[0], "MTGnx") > strings.Index(staff.posts[0], "ftpd") {
+		t.Errorf("digest not sorted: %q", staff.posts[0])
+	}
+}
+
+func TestDigestOnceEmptySilent(t *testing.T) {
+	cat := &fakeCatalog{titles: []Title{ftpdBase}}
+	rel := &fakeReleases{latest: map[string]Release{"mtheall/ftpd": mkrel("v3.2.1", "2026-10-01T00:00:00Z")}, has: map[string]bool{"mtheall/ftpd": true}}
+	w, staff, _ := testWatcher(cat, rel, &fakeTrigger{})
+	w.RunOnce(context.Background())
+	w.DigestOnce()
+	if len(staff.posts) != 0 {
+		t.Fatalf("empty digest posted: %v", staff.posts)
+	}
+}
+
 func TestDriftServesLiveLabel(t *testing.T) {
 	// Drift and stuck text name the catalog's live served label, not the
 	// possibly stale source tag.

@@ -109,9 +109,22 @@ type Monitor struct {
 	alerts    Announcer // nil = no staff-alerts mirror
 	alertsID  string
 	log       *slog.Logger
+	downAfter int                 // consecutive failures before paging
+	depends   map[string][]string // child target -> parent targets
 	mu        sync.RWMutex
-	states    map[string]bool
+	states    map[string]*targetState
+	acks      map[string]time.Time // target -> ack expiry
 	baselined bool
+}
+
+// targetState is one target's tracked outage state.
+type targetState struct {
+	up        bool
+	seen      bool
+	fails     int       // consecutive failures in the current streak
+	posted    bool      // DOWN alert posted for the current streak
+	downSince time.Time // first failure of the current streak
+	lastErr   string
 }
 
 // SetAlertsMirror also posts tagged transitions to the staff alerts
@@ -157,8 +170,12 @@ func (m *Monitor) Snapshot() []TargetState {
 	defer m.mu.RUnlock()
 	out := make([]TargetState, 0, len(m.targets))
 	for _, t := range m.targets {
-		up, seen := m.states[t.Name]
-		out = append(out, TargetState{Name: t.Name, Up: up, Seen: seen})
+		st := m.states[t.Name]
+		if st == nil {
+			out = append(out, TargetState{Name: t.Name})
+			continue
+		}
+		out = append(out, TargetState{Name: t.Name, Up: st.up, Seen: st.seen})
 	}
 	return out
 }
@@ -171,7 +188,9 @@ func NewMonitor(targets []Target, interval time.Duration, prober Prober, announc
 	return &Monitor{
 		targets: targets, interval: interval, prober: prober,
 		announce: announce, channelID: channelID, log: log,
-		states: map[string]bool{},
+		downAfter: 3,
+		states:    map[string]*targetState{},
+		acks:      map[string]time.Time{},
 	}
 }
 
@@ -198,32 +217,14 @@ func (m *Monitor) RunOnce(ctx context.Context) {
 func (m *Monitor) check(ctx context.Context) {
 	for _, t := range m.targets {
 		up, detail := m.prober.Probe(ctx, t)
-		m.mu.Lock()
-		prev, seen := m.states[t.Name]
-		m.states[t.Name] = up
-		baselined := m.baselined
-		m.mu.Unlock()
-		if !baselined || !seen {
-			continue
-		}
-		if up == prev {
-			continue
-		}
-		var msg string
-		if up {
-			msg = fmt.Sprintf(":green_circle: **%s** is back UP — %s", t.Name, detail)
-		} else {
-			msg = fmt.Sprintf(":red_circle: **%s** is DOWN — %s\n`%s`", t.Name, detail, t.URL)
-		}
-		if err := m.announce.Announce(m.channelID, msg); err != nil {
-			m.log.Error("status announce failed", "target", t.Name, "err", err)
-		}
-		if m.alerts != nil && m.alertsID != "" {
-			state := "is DOWN — " + detail
-			if up {
-				state = "is back UP — " + detail
+		statusMsg, alertMsg := m.transition(t, up, detail)
+		if statusMsg != "" {
+			if err := m.announce.Announce(m.channelID, statusMsg); err != nil {
+				m.log.Error("status announce failed", "target", t.Name, "err", err)
 			}
-			if err := m.alerts.Announce(m.alertsID, AlertTag(t.Name)+" "+shortName(t.Name)+" "+state); err != nil {
+		}
+		if alertMsg != "" && m.alerts != nil && m.alertsID != "" {
+			if err := m.alerts.Announce(m.alertsID, alertMsg); err != nil {
 				m.log.Error("alerts mirror failed", "target", t.Name, "err", err)
 			}
 		}
@@ -231,4 +232,183 @@ func (m *Monitor) check(ctx context.Context) {
 	m.mu.Lock()
 	m.baselined = true
 	m.mu.Unlock()
+}
+
+// transition folds one probe result into state and returns the status and
+// alerts messages to post ("" = silent). DOWN pages only after downAfter
+// consecutive failures, and stays silent while acked or while a declared
+// dependency is posted-down; recovery announces with the outage length,
+// but only when the outage was announced.
+func (m *Monitor) transition(t Target, up bool, detail string) (string, string) {
+	now := time.Now()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	st := m.states[t.Name]
+	if st == nil {
+		st = &targetState{}
+		m.states[t.Name] = st
+	}
+	if !m.baselined || !st.seen {
+		st.seen, st.up = true, up
+		if !up {
+			st.fails, st.downSince, st.lastErr = 1, now, detail
+		}
+		return "", ""
+	}
+	status := func(state string) string {
+		return fmt.Sprintf(":red_circle: **%s** %s\n`%s`", t.Name, state, t.URL)
+	}
+	if up {
+		posted, downFor := st.posted, now.Sub(st.downSince)
+		st.up, st.fails, st.posted, st.lastErr = true, 0, false, ""
+		delete(m.acks, t.Name)
+		if !posted {
+			return "", ""
+		}
+		body := fmt.Sprintf("is back UP — %s (was down %s)", detail, fmtDowntime(downFor))
+		return fmt.Sprintf(":green_circle: **%s** %s", t.Name, body),
+			AlertTag(t.Name) + " " + shortName(t.Name) + " " + body
+	}
+	if st.fails == 0 {
+		st.downSince = now
+	}
+	st.up, st.lastErr = false, detail
+	st.fails++
+	if st.posted || st.fails < m.downAfter {
+		return "", ""
+	}
+	if exp, ok := m.acks[t.Name]; ok {
+		if now.Before(exp) {
+			m.log.Info("status down suppressed by ack", "target", t.Name)
+			return "", ""
+		}
+		delete(m.acks, t.Name)
+	}
+	for _, parent := range m.depends[t.Name] {
+		if ps, ok := m.states[parent]; ok && ps.posted {
+			m.log.Info("status down suppressed by dependency", "target", t.Name, "parent", parent)
+			return "", ""
+		}
+	}
+	st.posted = true
+	polls := fmt.Sprintf("%d bad polls", st.fails)
+	if st.fails == 1 {
+		polls = "1 bad poll"
+	}
+	body := fmt.Sprintf("is DOWN — %s (failing %s, %s)", detail, fmtDowntime(now.Sub(st.downSince)), polls)
+	return status(body), AlertTag(t.Name) + " " + shortName(t.Name) + " " + body
+}
+
+// fmtDowntime renders an outage length compactly.
+func fmtDowntime(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
+	if m := int(d.Minutes()) % 60; m > 0 {
+		return fmt.Sprintf("%dh%dm", int(d.Hours()), m)
+	}
+	return fmt.Sprintf("%dh", int(d.Hours()))
+}
+
+// SetDownAfter sets how many consecutive failures page (default 3).
+func (m *Monitor) SetDownAfter(n int) {
+	if n < 1 {
+		n = 1
+	}
+	m.downAfter = n
+}
+
+// ParseDepends parses "child=parent,child=parent" dependency pairs. A
+// child failing while a parent is posted-down stays silent; it pages once
+// the parent recovers if it is still failing.
+func ParseDepends(v string) map[string][]string {
+	var out map[string][]string
+	for _, entry := range strings.Split(v, ",") {
+		child, parent, ok := strings.Cut(entry, "=")
+		child, parent = strings.TrimSpace(child), strings.TrimSpace(parent)
+		if !ok || child == "" || parent == "" {
+			continue
+		}
+		if out == nil {
+			out = map[string][]string{}
+		}
+		out[child] = append(out[child], parent)
+	}
+	return out
+}
+
+// SetDepends installs the dependency map (nil disables suppression).
+func (m *Monitor) SetDepends(d map[string][]string) {
+	m.depends = d
+}
+
+// matchLocked resolves a target name case-insensitively: exact first,
+// then unique substring.
+func (m *Monitor) matchLocked(name string) (string, bool) {
+	for _, t := range m.targets {
+		if strings.EqualFold(t.Name, name) {
+			return t.Name, true
+		}
+	}
+	var found string
+	n := 0
+	for _, t := range m.targets {
+		if strings.Contains(strings.ToLower(t.Name), strings.ToLower(name)) {
+			found, n = t.Name, n+1
+		}
+	}
+	return found, n == 1
+}
+
+// Ack silences name's DOWN alerts for ttl (default 1h), returning the
+// matched target. Recovery clears the ack early.
+func (m *Monitor) Ack(name string, ttl time.Duration) (string, bool) {
+	if ttl <= 0 {
+		ttl = time.Hour
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	matched, ok := m.matchLocked(name)
+	if !ok {
+		return "", false
+	}
+	if m.acks == nil {
+		m.acks = map[string]time.Time{}
+	}
+	m.acks[matched] = time.Now().Add(ttl)
+	return matched, true
+}
+
+// Unack lifts name's ack; false means no such target or no ack.
+func (m *Monitor) Unack(name string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	matched, ok := m.matchLocked(name)
+	if !ok {
+		return false
+	}
+	if _, ok := m.acks[matched]; !ok {
+		return false
+	}
+	delete(m.acks, matched)
+	return true
+}
+
+// Acks returns the active (unexpired) ack expiries by target.
+func (m *Monitor) Acks() map[string]time.Time {
+	now := time.Now()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := map[string]time.Time{}
+	for name, exp := range m.acks {
+		if now.Before(exp) {
+			out[name] = exp
+			continue
+		}
+		delete(m.acks, name)
+	}
+	return out
 }

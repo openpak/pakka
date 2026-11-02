@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -61,6 +62,7 @@ type Bot struct {
 	publisher    PublisherAdmin    // nil = no publish commands
 	staff        map[string]string // post_notice name -> channel ID
 	router       *Router           // nil = support routing disabled
+	faq          *FAQ              // nil = FAQ answers disabled (follows the router)
 	ownID        string
 	redactExtra  []string // internal endpoints/hostnames, never posted to chat
 	log          *slog.Logger
@@ -112,6 +114,10 @@ func New(cfg config.Config, runner *diagnostics.Runner, inv *investigate.Investi
 	}
 	s.AddHandler(b.onMessage)
 	log.Info("support routing", "state", b.router.Describe())
+	if b.router != nil {
+		b.faq = NewFAQ(cfg.MatchmakingChannel, time.Hour, log)
+		log.Info("faq answers enabled")
+	}
 	return b, nil
 }
 
@@ -250,6 +256,10 @@ func (b *Bot) Handle(ctx context.Context, sender Sender, in Incoming) {
 		b.reply(sender, in.ChannelID, msg)
 		return
 	}
+	if msg, ok := b.faqAnswer(in, content); ok {
+		b.reply(sender, in.ChannelID, msg)
+		return
+	}
 	if !strings.HasPrefix(content, b.prefix) {
 		return
 	}
@@ -379,6 +389,18 @@ func (b *Bot) runCommand(ctx context.Context, sender Sender, in Incoming, args [
 		out = b.cmdEshop()
 	case "publish":
 		out = b.cmdPublish(ctx, in, args[1:])
+	case "ack":
+		if len(b.ops) > 0 && !b.ops[in.ChannelID] {
+			out = "ack is only available in ops channels"
+		} else {
+			out = b.cmdAck(args[1:])
+		}
+	case "unack":
+		if len(b.ops) > 0 && !b.ops[in.ChannelID] {
+			out = "unack is only available in ops channels"
+		} else {
+			out = b.cmdUnack(args[1:])
+		}
 	default:
 		out = fmt.Sprintf("unknown command %q (try `%s help`)", args[0], b.prefix)
 	}
@@ -391,6 +413,18 @@ func (b *Bot) route(in Incoming, content string) (string, bool) {
 		return "", false
 	}
 	return b.router.Route(in)
+}
+
+// faqAnswer answers an in-scope support question from the curated FAQ;
+// false means stay silent for the humans.
+func (b *Bot) faqAnswer(in Incoming, content string) (string, bool) {
+	if b.faq == nil || strings.HasPrefix(content, b.prefix) {
+		return "", false
+	}
+	if !b.router.Scoped(in.ChannelID) {
+		return "", false
+	}
+	return b.faq.Answer(in)
 }
 
 // routeText classifies free text (e.g. after an unknown !pakka command)
@@ -407,7 +441,7 @@ func (b *Bot) routeText(in Incoming, content string) (string, bool) {
 // isCommand reports whether name is a built-in command.
 func isCommand(name string) bool {
 	switch name {
-	case "help", "run", "investigate", "eshop", "publish":
+	case "help", "run", "investigate", "eshop", "publish", "ack", "unack":
 		return true
 	}
 	return false
@@ -418,8 +452,9 @@ func usage(prefix string) string {
 		"`%s run [scenario] [fixture|live]` — run checks (default: all-pass fixture)\n"+
 		"`%s investigate [fixture [scenario]|live] <symptoms>` — diagnose a problem (ops channels only)\n"+
 		"`%s eshop` — eShop update watch status\n"+
-		"`%s publish list|show|approve|reject` — publishing review queue (staff only)",
-		prefix, prefix, prefix, prefix)
+		"`%s publish list|show|approve|reject` — publishing review queue (staff only)\n"+
+		"`%s ack|unack [service] [duration]` — silence DOWN alerts (default 1h); bare `ack` lists",
+		prefix, prefix, prefix, prefix, prefix)
 }
 
 // cmdRun executes a diagnostic suite: `run [scenario] [fixture|live]`.
@@ -509,7 +544,7 @@ func (b *Bot) cmdEshop() string {
 		sb.WriteString("; no poll yet")
 	}
 	for _, behind := range snap.BehindTitles {
-		served := behind.Shipped
+		served := behind.Served
 		if served == "" {
 			served = "4TU build"
 		}
@@ -529,6 +564,56 @@ func (b *Bot) cmdEshop() string {
 		fmt.Fprintf(&sb, "\nsync: last run %s (%s)", result, snap.Trigger.LastInfo)
 	}
 	return sb.String()
+}
+
+// cmdAck silences a target's DOWN alerts: `ack [name] [duration]`.
+func (b *Bot) cmdAck(args []string) string {
+	if b.agentMonitor == nil {
+		return "status monitor not configured"
+	}
+	if len(args) == 0 {
+		acks := b.agentMonitor.Acks()
+		if len(acks) == 0 {
+			return "nothing acked"
+		}
+		names := make([]string, 0, len(acks))
+		for name := range acks {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		parts := make([]string, 0, len(names))
+		for _, name := range names {
+			parts = append(parts, fmt.Sprintf("**%s** (%s left)", name, fmtDowntime(time.Until(acks[name]))))
+		}
+		return "acked: " + strings.Join(parts, ", ")
+	}
+	ttl := time.Hour
+	if len(args) > 1 {
+		d, err := time.ParseDuration(args[1])
+		if err != nil || d <= 0 {
+			return fmt.Sprintf("bad duration %q (try 30m, 2h)", args[1])
+		}
+		ttl = d
+	}
+	matched, ok := b.agentMonitor.Ack(args[0], ttl)
+	if !ok {
+		return fmt.Sprintf("unknown target %q", args[0])
+	}
+	return fmt.Sprintf("acked **%s** for %s", matched, fmtDowntime(ttl))
+}
+
+// cmdUnack lifts a target's ack.
+func (b *Bot) cmdUnack(args []string) string {
+	if b.agentMonitor == nil {
+		return "status monitor not configured"
+	}
+	if len(args) == 0 {
+		return fmt.Sprintf("usage: `%s unack <service>`", b.prefix)
+	}
+	if !b.agentMonitor.Unack(args[0]) {
+		return fmt.Sprintf("nothing acked for %q", args[0])
+	}
+	return fmt.Sprintf("unacked **%s**", args[0])
 }
 
 func (b *Bot) reply(sender Sender, channelID, content string) {

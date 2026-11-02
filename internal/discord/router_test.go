@@ -11,6 +11,17 @@ import (
 	"pakka/internal/meta"
 )
 
+func TestScoped(t *testing.T) {
+	r := NewRouter(keywordClassifier{}, "help1", "", "bug1", time.Hour, nil)
+	if !r.Scoped("help1") || !r.Scoped("bug1") || r.Scoped("other") {
+		t.Error("scoped mismatch")
+	}
+	var nilRouter *Router
+	if nilRouter.Scoped("help1") {
+		t.Error("nil router scoped")
+	}
+}
+
 func TestClassify(t *testing.T) {
 	cases := []struct {
 		text string
