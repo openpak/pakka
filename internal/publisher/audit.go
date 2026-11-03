@@ -1,12 +1,10 @@
 package publisher
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
+	"pakka/internal/store"
 	"sync"
 	"time"
 )
@@ -27,7 +25,7 @@ type AuditEntry struct {
 // With no directory it keeps the tail and the process log only.
 type Audit struct {
 	mu   sync.Mutex
-	path string
+	st   *store.Store
 	tail []AuditEntry
 	log  *slog.Logger
 	now  func() time.Time
@@ -36,25 +34,17 @@ type Audit struct {
 const auditTail = 200
 
 // NewAudit opens the log under dir (empty = memory only).
-func NewAudit(dir string, log *slog.Logger) (*Audit, error) {
-	a := &Audit{log: log, now: time.Now}
-	if dir == "" {
-		return a, nil
+func NewAudit(st *store.Store, log *slog.Logger) (*Audit, error) {
+	a := &Audit{log: log, now: time.Now, st: st}
+	rows, err := st.AuditTail(auditTail)
+	if err != nil {
+		return nil, fmt.Errorf("audit log: %w", err)
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return nil, fmt.Errorf("audit dir: %w", err)
-	}
-	a.path = filepath.Join(dir, "publisher-audit.jsonl")
-	if f, err := os.Open(a.path); err == nil {
-		sc := bufio.NewScanner(f)
-		sc.Buffer(make([]byte, 64*1024), 1<<20)
-		for sc.Scan() {
-			var e AuditEntry
-			if json.Unmarshal(sc.Bytes(), &e) == nil {
-				a.push(e)
-			}
+	for _, raw := range rows {
+		var e AuditEntry
+		if json.Unmarshal(raw, &e) == nil {
+			a.push(e)
 		}
-		f.Close()
 	}
 	return a, nil
 }
@@ -77,25 +67,16 @@ func (a *Audit) Record(e AuditEntry) error {
 	a.push(e)
 	a.log.Info("publisher audit", "actor", e.Actor, "event", e.Event, "tool", e.Tool,
 		"category", e.Category, "event_id", e.EventID, "draft", e.DraftID, "detail", e.Detail)
-	if a.path == "" {
-		return nil
-	}
 	raw, err := json.Marshal(e)
 	if err != nil {
 		return err
 	}
-	f, err := os.OpenFile(a.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-	if err != nil {
+	if err := a.st.AuditAppend(raw); err != nil {
 		return fmt.Errorf("audit log: %w", err)
 	}
-	defer f.Close()
-	if _, err := f.Write(append(raw, '\n')); err != nil {
-		return fmt.Errorf("audit log: %w", err)
-	}
-	return f.Sync()
+	return nil
 }
 
-// Recent returns up to n newest entries, oldest first.
 func (a *Audit) Recent(n int) []AuditEntry {
 	a.mu.Lock()
 	defer a.mu.Unlock()

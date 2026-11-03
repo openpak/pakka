@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"pakka/internal/store"
 	"strconv"
 	"sync"
 	"time"
@@ -15,21 +16,18 @@ import (
 // OpenVerse.
 type mirrorState struct {
 	mu   sync.Mutex
-	file jsonFile
+	file store.Doc
 	data struct {
 		Baselined bool            `json:"baselined"`
 		Seen      map[string]bool `json:"seen"`
 	}
 }
 
-func newMirrorState(dir string) (*mirrorState, error) {
-	f, err := newJSONFile(dir, "publisher-mirror.json")
-	if err != nil {
-		return nil, err
-	}
+func newMirrorState(st *store.Store) (*mirrorState, error) {
+	f := st.Doc("publisher-mirror")
 	m := &mirrorState{file: f}
 	m.data.Seen = map[string]bool{}
-	if err := f.load(&m.data); err != nil {
+	if err := f.Load(&m.data); err != nil {
 		return nil, fmt.Errorf("mirror state: %w", err)
 	}
 	if m.data.Seen == nil {
@@ -50,7 +48,7 @@ func (m *mirrorState) add(keys ...string) {
 	for _, k := range keys {
 		m.data.Seen[k] = true
 	}
-	_ = m.file.save(m.data)
+	_ = m.file.Save(m.data)
 }
 
 func (m *mirrorState) baselined() bool {
@@ -66,7 +64,7 @@ func (m *mirrorState) setBaselined(keys []string) {
 		m.data.Seen[k] = true
 	}
 	m.data.Baselined = true
-	_ = m.file.save(m.data)
+	_ = m.file.Save(m.data)
 }
 
 func mirrorKey(topic string, id uint32) string {

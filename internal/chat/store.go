@@ -6,12 +6,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"pakka/internal/store"
 )
 
 // Message roles stored in a conversation.
@@ -49,33 +49,20 @@ var (
 // account, so one account can never read another's conversation.
 type Store struct {
 	mu    sync.Mutex
-	dir   string
+	st    *store.Store
 	byID  map[string]*Conversation
 	max   int
 	clock func() time.Time
 }
 
 // NewStore opens the store and loads any persisted conversations.
-func NewStore(dir string, maxPerAccount int) (*Store, error) {
-	s := &Store{dir: dir, byID: map[string]*Conversation{}, max: maxPerAccount, clock: time.Now}
-	if dir == "" {
-		return s, nil
-	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return nil, err
-	}
-	entries, err := os.ReadDir(dir)
+func NewStore(st *store.Store, maxPerAccount int) (*Store, error) {
+	s := &Store{st: st, byID: map[string]*Conversation{}, max: maxPerAccount, clock: time.Now}
+	docs, err := st.ChatLoad()
 	if err != nil {
 		return nil, err
 	}
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
-		if err != nil {
-			continue
-		}
+	for _, data := range docs {
 		var c Conversation
 		if json.Unmarshal(data, &c) == nil && c.ID != "" && c.Account != "" && validID(c.ID) {
 			s.byID[c.ID] = &c
@@ -178,9 +165,7 @@ func (s *Store) Delete(account, id string) error {
 		return ErrNotFound
 	}
 	delete(s.byID, id)
-	if s.dir != "" {
-		_ = os.Remove(s.path(id))
-	}
+	_ = s.st.ChatDelete(id)
 	return nil
 }
 
@@ -193,29 +178,19 @@ func (s *Store) Purge(retention time.Duration) int {
 	for id, c := range s.byID {
 		if c.Updated.Before(cut) {
 			delete(s.byID, id)
-			if s.dir != "" {
-				_ = os.Remove(s.path(id))
-			}
+			_ = s.st.ChatDelete(id)
 			n++
 		}
 	}
 	return n
 }
 
-func (s *Store) path(id string) string { return filepath.Join(s.dir, id+".json") }
-
 func (s *Store) persist(c *Conversation) {
-	if s.dir == "" {
-		return
-	}
 	data, err := json.Marshal(c)
 	if err != nil {
 		return
 	}
-	tmp := s.path(c.ID) + ".tmp"
-	if os.WriteFile(tmp, data, 0o600) == nil {
-		_ = os.Rename(tmp, s.path(c.ID))
-	}
+	_ = s.st.ChatSave(c.ID, c.Account, data)
 }
 
 func titleOf(text string) string {

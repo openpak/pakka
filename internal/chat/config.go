@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"pakka/internal/store"
 )
 
 // Config is the chat service configuration, read from the environment.
@@ -26,7 +28,10 @@ type Config struct {
 	DocsIndexURL string
 	// DocsBaseURL prefixes document locations in links.
 	DocsBaseURL string
-	// StateDir holds conversations; empty keeps them in memory only.
+	// Store holds conversations and consents (Postgres in production).
+	Store *store.Store
+	// StateDir is the local-development fallback when Store is nil; empty
+	// keeps conversations in memory only.
 	StateDir string
 	// Retention is how long a conversation is kept after its last message.
 	Retention time.Duration

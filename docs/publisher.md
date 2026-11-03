@@ -45,11 +45,11 @@ Tool scopes: `openverse:post`, `openverse:community`, `news:publish`, `boss:queu
 
 - `PAKKA_PUBLISH_KILL=1` stops every publish and approval. `POST /v1/publisher/kill` engages it at runtime; only an environment change and restart releases it.
 - `PAKKA_PUBLISH_CATEGORIES` lists the categories that are on (comma list). Unlisted means refused, for auto posts and drafts alike. Empty means nothing publishes.
-- Every attempt, denial, queueing, approval, rejection and publish is appended to `publisher-audit.jsonl` under `PAKKA_STATE_DIR` before it happens. If the log cannot be written, Pakka refuses to publish.
+- Every attempt, denial, queueing, approval, rejection and publish is appended to the `pakka_publisher_audit` table in Postgres before it happens. If the log cannot be written, Pakka refuses to publish.
 
 ## Configuration
 
-`PAKKA_OPENVERSE_URL`, `PAKKA_OPENVERSE_KEY` (the OpenVerse `PN_MIIVERSE_API_OFFICIAL_KEY`), `PAKKA_NEWS_ADMIN_BASE`, `PAKKA_NEWS_ADMIN_KEY`, `PAKKA_PUBLISH_ADMIN_KEY`, `PAKKA_PUBLISH_CATEGORIES`, `PAKKA_PUBLISH_KILL`, `PAKKA_PUBLISH_MIRROR_INTERVAL` (default 10m, 0 = off), `PAKKA_PUBLISH_HIGHLIGHTS_EVERY` (default 0 = manual only), `PAKKA_VERSE_URL`, `PAKKA_STATE_DIR`, `PAKKA_PUBLISH_META_API_KEY` / `PAKKA_PUBLISH_META_MODEL` (the highlights writer's own model credentials; without any model the weekly draft is a plain count with community names). Without the OpenVerse URL and key the publisher is off. Run it on one host only.
+`PAKKA_OPENVERSE_URL`, `PAKKA_OPENVERSE_KEY` (the OpenVerse `PN_MIIVERSE_API_OFFICIAL_KEY`), `PAKKA_NEWS_ADMIN_BASE`, `PAKKA_NEWS_ADMIN_KEY`, `PAKKA_PUBLISH_ADMIN_KEY`, `PAKKA_PUBLISH_CATEGORIES`, `PAKKA_PUBLISH_KILL`, `PAKKA_PUBLISH_MIRROR_INTERVAL` (default 10m, 0 = off), `PAKKA_PUBLISH_HIGHLIGHTS_EVERY` (default 0 = manual only), `PAKKA_VERSE_URL`, `PAKKA_DATABASE_URL`, `PAKKA_PUBLISH_META_API_KEY` / `PAKKA_PUBLISH_META_MODEL` (the highlights writer's own model credentials; without any model the weekly draft is a plain count with community names). Without the OpenVerse URL and key the publisher is off. Run it on one host only.
 
 ## Admin API
 

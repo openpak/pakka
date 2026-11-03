@@ -1,6 +1,7 @@
 package publisher
 
 import (
+	"pakka/internal/store"
 	"strconv"
 	"strings"
 	"time"
@@ -23,7 +24,11 @@ type Config struct {
 	// AdminKey guards the /v1/publisher endpoints (PAKKA_PUBLISH_ADMIN_KEY).
 	// Empty = the endpoints answer 404.
 	AdminKey string
-	// StateDir holds the queue, the audit log and the mirror state.
+	// Store is where the queue, the audit log and the mirror state live
+	// (Postgres in production).
+	Store *store.Store
+	// StateDir is the local-development fallback: with no Store, a JSON file
+	// store is opened there. Empty with no Store keeps memory only.
 	StateDir string
 	// ImageHosts are the hosts an image may come from (our own only).
 	ImageHosts []string

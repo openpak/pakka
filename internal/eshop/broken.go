@@ -1,18 +1,14 @@
 package eshop
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"sort"
 	"sync"
 	"time"
-)
 
-// brokenStateFile is the persisted first-seen map, relative to the state dir.
-const brokenStateFile = "eshop-broken.json"
+	"pakka/internal/store"
+)
 
 // brokenEntry is one package's tracked failure.
 type brokenEntry struct {
@@ -24,22 +20,22 @@ type brokenEntry struct {
 // BrokenTracker receives the sync's broken-package reports (package name to
 // failure context: the 4TU date or gh:tag it failed at) and alerts staff
 // once a package stays broken past the grace period. Reports arrive with
-// every sync; first-seen persists to the state dir so restarts and
-// redeploys don't reset the clock. An empty state dir keeps memory only.
+// every sync; first-seen persists to the store so restarts and
+// redeploys don't reset the clock. A nil store keeps memory only.
 type BrokenTracker struct {
 	staff   Announcer
 	staffID string
 	after   time.Duration
-	path    string
+	doc     store.Doc
+	durable bool
 	log     *slog.Logger
 
 	mu    sync.Mutex
 	state map[string]brokenEntry
 }
 
-// NewBrokenTracker builds the tracker, restoring persisted state when
-// stateDir is set.
-func NewBrokenTracker(staff Announcer, staffID string, after time.Duration, stateDir string, log *slog.Logger) *BrokenTracker {
+// NewBrokenTracker builds the tracker, restoring persisted state from st.
+func NewBrokenTracker(staff Announcer, staffID string, after time.Duration, st *store.Store, log *slog.Logger) *BrokenTracker {
 	if after <= 0 {
 		after = 168 * time.Hour
 	}
@@ -47,21 +43,18 @@ func NewBrokenTracker(staff Announcer, staffID string, after time.Duration, stat
 		staff: staff, staffID: staffID, after: after,
 		log: log, state: map[string]brokenEntry{},
 	}
-	if stateDir == "" {
-		log.Info("eshop broken watch: no state dir, memory only")
+	b.doc = st.Doc("eshop-broken")
+	b.durable = st.Durable()
+	if !b.durable {
+		log.Info("eshop broken watch: no durable store, memory only")
 		return b
 	}
-	b.path = filepath.Join(stateDir, brokenStateFile)
-	if raw, err := os.ReadFile(b.path); err == nil {
-		var saved map[string]brokenEntry
-		if err := json.Unmarshal(raw, &saved); err != nil {
-			log.Warn("eshop broken watch: corrupt state, starting fresh", "err", err)
-		} else {
-			b.state = saved
-		}
-	} else if !os.IsNotExist(err) {
+	var saved map[string]brokenEntry
+	if err := b.doc.Load(&saved); err != nil {
 		log.Warn("eshop broken watch: state unreadable, memory only", "err", err)
-		b.path = ""
+		b.durable = false
+	} else if saved != nil {
+		b.state = saved
 	}
 	return b
 }
@@ -109,19 +102,10 @@ func (b *BrokenTracker) Report(broken map[string]string) {
 
 // saveLocked persists first-seen state. The caller holds b.mu.
 func (b *BrokenTracker) saveLocked() {
-	if b.path == "" {
+	if !b.durable {
 		return
 	}
-	raw, err := json.Marshal(b.state)
-	if err != nil {
-		b.log.Warn("eshop broken watch: state unserializable", "err", err)
-		return
-	}
-	if err := os.MkdirAll(filepath.Dir(b.path), 0o755); err != nil {
-		b.log.Warn("eshop broken watch: state dir unwritable", "err", err)
-		return
-	}
-	if err := os.WriteFile(b.path, raw, 0o644); err != nil {
+	if err := b.doc.Save(b.state); err != nil {
 		b.log.Warn("eshop broken watch: state unwritable", "err", err)
 	}
 }

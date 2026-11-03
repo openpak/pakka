@@ -6,16 +6,14 @@ package releases
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"pakka/internal/eshop"
+	"pakka/internal/store"
 )
 
 // Lister resolves a repo slug to its latest release.
@@ -59,16 +57,16 @@ type Watcher struct {
 	after   time.Duration
 	staff   Announcer
 	staffID string
-	path    string
+	doc     store.Doc
+	durable bool
 	log     *slog.Logger
 
 	mu    sync.Mutex
 	state map[string]seen
 }
 
-// NewWatcher builds the watcher, restoring persisted state when stateDir
-// is set.
-func NewWatcher(lister Lister, repos []string, after time.Duration, staff Announcer, staffID, stateDir string, log *slog.Logger) *Watcher {
+// NewWatcher builds the watcher, restoring persisted state from st.
+func NewWatcher(lister Lister, repos []string, after time.Duration, staff Announcer, staffID string, st *store.Store, log *slog.Logger) *Watcher {
 	if after <= 0 {
 		after = 72 * time.Hour
 	}
@@ -76,20 +74,19 @@ func NewWatcher(lister Lister, repos []string, after time.Duration, staff Announ
 		lister: lister, repos: repos, after: after,
 		staff: staff, staffID: staffID, log: log, state: map[string]seen{},
 	}
-	if stateDir == "" {
+	if !st.Durable() {
 		return w
 	}
-	w.path = filepath.Join(stateDir, "releases.json")
-	if raw, err := os.ReadFile(w.path); err == nil {
-		var saved map[string]seen
-		if err := json.Unmarshal(raw, &saved); err != nil {
-			log.Warn("release watch: corrupt state, starting fresh", "err", err)
-		} else {
-			w.state = saved
-		}
-	} else if !os.IsNotExist(err) {
+	w.doc = st.Doc("releases")
+	var saved map[string]seen
+	if err := w.doc.Load(&saved); err != nil {
 		log.Warn("release watch: state unreadable, memory only", "err", err)
-		w.path = ""
+	} else {
+		w.state = saved
+		if w.state == nil {
+			w.state = map[string]seen{}
+		}
+		w.durable = true
 	}
 	return w
 }
@@ -157,18 +154,10 @@ func (w *Watcher) Check(ctx context.Context) {
 }
 
 func (w *Watcher) saveLocked() {
-	if w.path == "" {
+	if !w.durable {
 		return
 	}
-	raw, err := json.Marshal(w.state)
-	if err != nil {
-		return
-	}
-	if err := os.MkdirAll(filepath.Dir(w.path), 0o755); err != nil {
-		w.log.Warn("release watch: state dir unwritable", "err", err)
-		return
-	}
-	if err := os.WriteFile(w.path, raw, 0o644); err != nil {
+	if err := w.doc.Save(w.state); err != nil {
 		w.log.Warn("release watch: state unwritable", "err", err)
 	}
 }

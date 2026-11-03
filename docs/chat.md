@@ -26,7 +26,7 @@ Gates, in order: service key, eligibility (adult, not supervised; fail closed),
 consent, message size, per-conversation single flight, burst (`PAKKA_CHAT_BURST`,
 6/min), daily cap (`PAKKA_CHAT_DAILY_CAP`, 100), concurrency. Diagnoses are limited
 to `PAKKA_CHAT_DIAGNOSES_PER_HOUR` (3). Conversations live under
-`PAKKA_STATE_DIR/chat` for `PAKKA_CHAT_RETENTION` (30 days); at most
+Postgres (`pakka_chat_conversations`) for `PAKKA_CHAT_RETENTION` (30 days); at most
 `PAKKA_CHAT_MAX_CONVERSATIONS` (30) per account. Counters are in memory.
 
 Model: `PAKKA_CHAT_META_API_KEY` (optional) gives chat its own Meta credentials, and `PAKKA_CHAT_META_MODEL` its own model id; otherwise chat uses the process model.

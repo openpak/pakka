@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -27,6 +28,7 @@ import (
 	"pakka/internal/publisher"
 	"pakka/internal/releases"
 	"pakka/internal/server"
+	"pakka/internal/store"
 )
 
 func main() {
@@ -56,6 +58,12 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	st, err := openState(ctx, cfg, log)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+
 	var bot *discord.Bot
 	var eshopBroken *eshop.BrokenTracker
 	var lander *news.Lander
@@ -79,9 +87,9 @@ func run() error {
 		startMonitor(ctx, cfg, b, log)
 		startWelcomer(ctx, cfg, b, log)
 		startMatchmaking(ctx, cfg, b, log)
-		eshopBroken = startEshop(ctx, cfg, b, log)
+		eshopBroken = startEshop(ctx, cfg, b, st, log)
 		lander = startLanding(cfg, b, log)
-		startReleases(ctx, cfg, b, log)
+		startReleases(ctx, cfg, b, st, log)
 	} else {
 		log.Info("discord disabled: no bot token configured")
 	}
@@ -95,8 +103,8 @@ func run() error {
 	} else {
 		log.Info("log watcher disabled: needs bot plus alert channels")
 	}
-	pub, writer := startPublisher(ctx, cfg, bot, metaClient, log)
-	chatSvc := startChat(ctx, cfg, investigator, model, log)
+	pub, writer := startPublisher(ctx, cfg, bot, metaClient, st, log)
+	chatSvc := startChat(ctx, cfg, investigator, model, st, log)
 	srv := &http.Server{
 		Addr: cfg.Addr,
 		Handler: server.New(server.Options{
@@ -165,7 +173,7 @@ func startMonitor(ctx context.Context, cfg config.Config, b *discord.Bot, log *s
 // announce channels are configured. Run on one host only: every instance
 // would otherwise post the same announcements. It returns the broken-build
 // tracker for the HTTP intake, or nil when the watcher is disabled.
-func startEshop(ctx context.Context, cfg config.Config, b *discord.Bot, log *slog.Logger) *eshop.BrokenTracker {
+func startEshop(ctx context.Context, cfg config.Config, b *discord.Bot, st *store.Store, log *slog.Logger) *eshop.BrokenTracker {
 	if cfg.EshopAPIBase == "" || cfg.AlertsChannel == "" || cfg.EshopAnnounceChannel == "" {
 		log.Info("eshop watcher disabled: needs api base plus staff and announce channels")
 		return nil
@@ -195,7 +203,7 @@ func startEshop(ctx context.Context, cfg config.Config, b *discord.Bot, log *slo
 	b.SetEshopWatcher(w)
 	tracker := eshop.NewBrokenTracker(
 		discord.SenderAnnouncer{Sender: b.RedactingSender()},
-		cfg.AlertsChannel, cfg.EshopBrokenAfter, cfg.StateDir, log)
+		cfg.AlertsChannel, cfg.EshopBrokenAfter, st, log)
 	go w.Run(ctx, cfg.EshopInterval)
 	go w.RunDigest(ctx, cfg.EshopDigestInterval)
 	log.Info("eshop watcher started", "sources", len(sources))
@@ -237,7 +245,7 @@ func (w metaWriter) Write(ctx context.Context, system, user string) (string, err
 // startPublisher builds the publisher when OpenVerse is configured: the
 // official-account posts, the News mirror, the review queue and the staff
 // commands. Run on one host only, like the eShop watcher.
-func startPublisher(ctx context.Context, cfg config.Config, b *discord.Bot, mc *meta.Client, log *slog.Logger) (*publisher.Service, publisher.Writer) {
+func startPublisher(ctx context.Context, cfg config.Config, b *discord.Bot, mc *meta.Client, st *store.Store, log *slog.Logger) (*publisher.Service, publisher.Writer) {
 	pcfg := publisher.LoadConfig(os.Getenv)
 	if !pcfg.Enabled() {
 		log.Info("publisher disabled: needs PAKKA_OPENVERSE_URL and PAKKA_OPENVERSE_KEY")
@@ -248,6 +256,7 @@ func startPublisher(ctx context.Context, cfg config.Config, b *discord.Bot, mc *
 	if pcfg.NewsBase != "" {
 		news = publisher.NewNews(pcfg.NewsBase, pcfg.NewsKey, 0)
 	}
+	pcfg.Store, pcfg.StateDir = st, ""
 	svc, err := publisher.New(pcfg, ov, news, log)
 	if err != nil {
 		log.Error("publisher disabled: cannot start", "err", err)
@@ -296,8 +305,9 @@ func startPublisher(ctx context.Context, cfg config.Config, b *discord.Bot, mc *
 // The chat model is the process model unless PAKKA_CHAT_META_API_KEY is set, which gives chat
 // its own Meta credentials (and PAKKA_CHAT_META_MODEL its own model id), so enabling chat does
 // not switch the Discord and publisher features on or change their model.
-func startChat(ctx context.Context, cfg config.Config, inv *investigate.Investigator, model investigate.Model, log *slog.Logger) *chat.Service {
-	ccfg := chat.LoadConfig(os.Getenv("PAKKA_STATE_DIR"))
+func startChat(ctx context.Context, cfg config.Config, inv *investigate.Investigator, model investigate.Model, st *store.Store, log *slog.Logger) *chat.Service {
+	ccfg := chat.LoadConfig("")
+	ccfg.Store = st
 	if ccfg.Key == "" {
 		log.Info("player chat disabled: no PAKKA_CHAT_KEY")
 		return nil
@@ -358,7 +368,7 @@ func startLanding(cfg config.Config, b *discord.Bot, log *slog.Logger) *news.Lan
 
 // startReleases launches the stale-release nudge when watched repos are
 // set. Run on one host only: every instance would post the same nudges.
-func startReleases(ctx context.Context, cfg config.Config, b *discord.Bot, log *slog.Logger) {
+func startReleases(ctx context.Context, cfg config.Config, b *discord.Bot, st *store.Store, log *slog.Logger) {
 	repos := releases.ParseRepos(cfg.ReleaseWatch)
 	if len(repos) == 0 || cfg.AlertsChannel == "" {
 		log.Info("release watch disabled: needs watched repos and a staff channel")
@@ -369,7 +379,7 @@ func startReleases(ctx context.Context, cfg config.Config, b *discord.Bot, log *
 		eshop.NewGitHubClient(cfg.GitHubToken, timeout),
 		repos, cfg.ReleaseStaleAfter,
 		discord.SenderAnnouncer{Sender: b.RedactingSender()},
-		cfg.AlertsChannel, cfg.StateDir, log)
+		cfg.AlertsChannel, st, log)
 	go w.Run(ctx, time.Hour)
 	log.Info("release watch started", "repos", len(repos))
 }
@@ -384,4 +394,63 @@ func startMatchmaking(ctx context.Context, cfg config.Config, b *discord.Bot, lo
 	s := discord.NewSweeper(b.Session(), cfg.MatchmakingChannel, cfg.MatchmakingMaxAge, time.Hour, log)
 	go s.Run(ctx)
 	log.Info("matchmaking sweeper started")
+}
+
+// openState opens Pakka's durable store. Postgres (PAKKA_DATABASE_URL) is the
+// only production store: existing JSON files in PAKKA_STATE_DIR are copied in
+// (never moved or deleted) and the files are not used afterwards. Without a
+// DSN the process refuses to start when any feature that keeps state is
+// enabled, unless PAKKA_ALLOW_FILE_STORE=1 asks for the local JSON files. An
+// instance with no stateful feature (the diagnostics-only status box) needs
+// no database and runs without one.
+func openState(ctx context.Context, cfg config.Config, log *slog.Logger) (*store.Store, error) {
+	if dsn := os.Getenv("PAKKA_DATABASE_URL"); dsn != "" {
+		st, err := store.Open(ctx, dsn)
+		if err != nil {
+			return nil, fmt.Errorf("state database: %w", err)
+		}
+		n, err := st.ImportFiles(ctx, cfg.StateDir, log)
+		if err != nil {
+			st.Close()
+			return nil, fmt.Errorf("state import: %w", err)
+		}
+		log.Info("state store: postgres", "imported_docs", n.Docs, "imported_conversations", n.Conversations, "imported_audit", n.Audit)
+		return st, nil
+	}
+	if os.Getenv("PAKKA_ALLOW_FILE_STORE") == "1" {
+		if cfg.StateDir == "" {
+			log.Warn("state store: memory only (PAKKA_ALLOW_FILE_STORE=1 without PAKKA_STATE_DIR)")
+			return nil, nil
+		}
+		st, err := store.OpenFiles(cfg.StateDir)
+		if err != nil {
+			return nil, err
+		}
+		log.Warn("state store: local JSON files (PAKKA_ALLOW_FILE_STORE=1), not for production", "dir", cfg.StateDir)
+		return st, nil
+	}
+	if f := statefulFeatures(cfg); len(f) > 0 {
+		return nil, fmt.Errorf("PAKKA_DATABASE_URL is required: %s keep state (set PAKKA_ALLOW_FILE_STORE=1 for local development)", strings.Join(f, ", "))
+	}
+	log.Info("state store: none needed (no stateful feature enabled)")
+	return nil, nil
+}
+
+// statefulFeatures names the enabled features that keep durable state.
+func statefulFeatures(cfg config.Config) []string {
+	var f []string
+	discordOn := cfg.DiscordToken != ""
+	if discordOn && cfg.EshopAPIBase != "" && cfg.AlertsChannel != "" && cfg.EshopAnnounceChannel != "" {
+		f = append(f, "eshop broken watch")
+	}
+	if discordOn && len(releases.ParseRepos(cfg.ReleaseWatch)) > 0 && cfg.AlertsChannel != "" {
+		f = append(f, "release watch")
+	}
+	if publisher.LoadConfig(os.Getenv).Enabled() {
+		f = append(f, "publisher")
+	}
+	if strings.TrimSpace(os.Getenv("PAKKA_CHAT_KEY")) != "" {
+		f = append(f, "player chat")
+	}
+	return f
 }

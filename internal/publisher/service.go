@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"pakka/internal/store"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -34,19 +35,26 @@ type Service struct {
 // New builds the service. ov and news may be nil when unconfigured; actions
 // that need them then fail with ErrNotConfigured.
 func New(cfg Config, ov OpenVerse, news NewsAdmin, log *slog.Logger) (*Service, error) {
-	q, err := NewQueue(cfg.StateDir)
+	st := cfg.Store
+	if st == nil && cfg.StateDir != "" {
+		var err error
+		if st, err = store.OpenFiles(cfg.StateDir); err != nil {
+			return nil, err
+		}
+	}
+	q, err := NewQueue(st)
 	if err != nil {
 		return nil, err
 	}
-	a, err := NewAudit(cfg.StateDir, log)
+	a, err := NewAudit(st, log)
 	if err != nil {
 		return nil, err
 	}
-	d, err := newDoneStore(cfg.StateDir)
+	d, err := newDoneStore(st)
 	if err != nil {
 		return nil, err
 	}
-	m, err := newMirrorState(cfg.StateDir)
+	m, err := newMirrorState(st)
 	if err != nil {
 		return nil, err
 	}

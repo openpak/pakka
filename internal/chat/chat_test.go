@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"pakka/internal/store"
 	"strings"
 	"sync"
 	"testing"
@@ -222,7 +223,7 @@ func TestDeleteRemovesFile(t *testing.T) {
 	id := mustConv(t, r, "acct-a", "g-a")
 	r.as(t, "acct-a", "g-a", "POST", "/v1/chat/conversations/"+id+"/messages", map[string]string{"text": "hi"})
 	r.as(t, "acct-a", "g-a", "DELETE", "/v1/chat/conversations/"+id, nil)
-	st, err := NewStore(r.svc.cfg.StateDir+"/chat", 3)
+	st, err := NewStore(store.MustFiles(r.svc.cfg.StateDir), 3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -450,7 +451,7 @@ func TestSanitizeAndModelOnlySeesRedactedText(t *testing.T) {
 }
 
 func TestPurgeExpired(t *testing.T) {
-	st, _ := NewStore("", 5)
+	st, _ := NewStore(nil, 5)
 	c, _ := st.Create("a")
 	now := time.Now().Add(48 * time.Hour)
 	st.clock = func() time.Time { return now }

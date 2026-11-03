@@ -3,6 +3,7 @@ package eshop
 import (
 	"io"
 	"log/slog"
+	"pakka/internal/store"
 	"strings"
 	"testing"
 	"time"
@@ -11,7 +12,7 @@ import (
 func testTracker(after time.Duration, stateDir string) (*BrokenTracker, *fakeAnnouncer) {
 	staff := &fakeAnnouncer{}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewBrokenTracker(staff, "staff1", after, stateDir, log), staff
+	return NewBrokenTracker(staff, "staff1", after, store.MustFiles(stateDir), log), staff
 }
 
 func backdate(t *testing.T, b *BrokenTracker, pkg string, ago time.Duration) {

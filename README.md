@@ -175,8 +175,7 @@ one staff digest of titles stuck behind upstream. The first poll only
 baselines, so restarts never flood. After each sync, run-hb.sh posts the
 broken-package set to `POST /v1/eshop-broken`; packages still broken after
 `PAKKA_ESHOP_BROKEN_AFTER` (default 168h) get one staff alert, batched.
-Broken first-seen persists under `PAKKA_STATE_DIR` (empty keeps memory
-only); mount it as a volume or redeploys reset the clock.
+Broken first-seen persists in Postgres (`PAKKA_DATABASE_URL`; see State below), so redeploys keep the clock.
 
 Game landings: with `PAKKA_NEWS_ADMIN_BASE` (default
 `http://openpak-news-experiment:20043`), `PAKKA_NEWS_ADMIN_KEY` and both
@@ -199,7 +198,7 @@ repos) set, Pakka nudges staff once a repo's latest release ages past
 `PAKKA_RELEASE_STALE_AFTER` (default 72h) without a newer one:
 `[Releases - pakka] v0.8.0 released 4d ago — confirm it's deployed.` The
 first sight of a tag baselines silently, so pre-existing old releases
-never nag; state persists under `PAKKA_STATE_DIR`.
+never nag; state persists in Postgres (`PAKKA_DATABASE_URL`).
 
 ## Community
 
@@ -214,3 +213,14 @@ never nag; state persists under `PAKKA_STATE_DIR`.
 ## License
 
 AGPL-3.0-only. See [LICENSE](LICENSE).
+
+## State
+
+All durable state (eShop broken first-seen, release watch, publisher queue, mirror and audit, chat
+conversations and consents) lives in Postgres, so one database backup covers it. Set
+`PAKKA_DATABASE_URL`; tables are created at start with a pool of at most 3 connections. Any feature
+that keeps state refuses to start without it (an instance running none of them, like the
+diagnostics-only status box, needs no database). On start, JSON files found in `PAKKA_STATE_DIR` are
+copied in once (existing rows are never overwritten and the files are left in place). For local
+development only, `PAKKA_ALLOW_FILE_STORE=1` keeps state in JSON files under `PAKKA_STATE_DIR`.
+Tests that need Postgres read `PAKKA_TEST_DATABASE_URL` and run with `-p 1`.

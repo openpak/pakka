@@ -1,11 +1,10 @@
 package chat
 
 import (
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"sync"
 	"time"
+
+	"pakka/internal/store"
 )
 
 // NoticeVersion identifies the data-use notice text players accept. Bump it
@@ -14,9 +13,10 @@ const NoticeVersion = "2026-11-01"
 
 // Consents records, per account, which notice version was accepted.
 type Consents struct {
-	mu   sync.Mutex
-	path string
-	m    map[string]consent
+	mu  sync.Mutex
+	doc store.Doc
+	on  bool
+	m   map[string]consent
 }
 
 type consent struct {
@@ -24,13 +24,14 @@ type consent struct {
 	At      time.Time `json:"at"`
 }
 
-// NewConsents loads consents from dir (empty = memory only).
-func NewConsents(dir string) *Consents {
+// NewConsents loads consents from st (nil = memory only).
+func NewConsents(st *store.Store) *Consents {
 	c := &Consents{m: map[string]consent{}}
-	if dir != "" {
-		c.path = filepath.Join(filepath.Dir(dir), "chat-consent.json")
-		if data, err := os.ReadFile(c.path); err == nil {
-			_ = json.Unmarshal(data, &c.m)
+	if st.Durable() {
+		c.doc, c.on = st.Doc("chat-consent"), true
+		_ = c.doc.Load(&c.m)
+		if c.m == nil {
+			c.m = map[string]consent{}
 		}
 	}
 	return c
@@ -60,13 +61,7 @@ func (c *Consents) Withdraw(account string) {
 }
 
 func (c *Consents) save() {
-	if c.path == "" {
-		return
-	}
-	if data, err := json.Marshal(c.m); err == nil {
-		tmp := c.path + ".tmp"
-		if os.WriteFile(tmp, data, 0o600) == nil {
-			_ = os.Rename(tmp, c.path)
-		}
+	if c.on {
+		_ = c.doc.Save(c.m)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"pakka/internal/store"
 	"strings"
 	"testing"
 	"time"
@@ -53,7 +54,7 @@ func TestWatchBaselineSilent(t *testing.T) {
 	}
 	staff := &fakeAnnouncer{}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	w := NewWatcher(lister, []string{"openpak/pakka"}, 72*time.Hour, staff, "staff1", "", log)
+	w := NewWatcher(lister, []string{"openpak/pakka"}, 72*time.Hour, staff, "staff1", nil, log)
 	w.Check(context.Background())
 	if len(staff.posts) != 0 {
 		t.Fatalf("baseline nagged: %v", staff.posts)
@@ -67,7 +68,7 @@ func TestWatchNagsAgedReleaseOnce(t *testing.T) {
 	}
 	staff := &fakeAnnouncer{}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	w := NewWatcher(lister, []string{"openpak/pakka"}, 72*time.Hour, staff, "staff1", "", log)
+	w := NewWatcher(lister, []string{"openpak/pakka"}, 72*time.Hour, staff, "staff1", nil, log)
 	ctx := context.Background()
 	w.Check(ctx) // baseline: silent
 	lister.rels["openpak/pakka"] = rel("v0.9.0", time.Hour)
@@ -95,12 +96,12 @@ func TestWatchPersists(t *testing.T) {
 	}
 	staff := &fakeAnnouncer{}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	w := NewWatcher(lister, []string{"openpak/pakka"}, 72*time.Hour, staff, "staff1", dir, log)
+	w := NewWatcher(lister, []string{"openpak/pakka"}, 72*time.Hour, staff, "staff1", store.MustFiles(dir), log)
 	ctx := context.Background()
 	w.Check(ctx)
 	lister.rels["openpak/pakka"] = rel("v0.9.0", 96*time.Hour)
 	w.Check(ctx) // new tag recorded, silent
-	w2 := NewWatcher(lister, []string{"openpak/pakka"}, 72*time.Hour, staff, "staff1", dir, log)
+	w2 := NewWatcher(lister, []string{"openpak/pakka"}, 72*time.Hour, staff, "staff1", store.MustFiles(dir), log)
 	w2.Check(ctx) // restored state: aged v0.9.0 nags
 	if len(staff.posts) != 1 || !strings.Contains(staff.posts[0], "v0.9.0") {
 		t.Fatalf("posts = %v", staff.posts)

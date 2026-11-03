@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"pakka/internal/store"
 )
 
 // Service is the chat HTTP API.
@@ -31,17 +33,20 @@ type Service struct {
 // New builds the service. agent.Model nil means replies report unavailable.
 func New(cfg Config, agent *Agent, log *slog.Logger) (*Service, error) {
 	cfg = cfg.withDefaults()
-	dir := ""
-	if cfg.StateDir != "" {
-		dir = cfg.StateDir + "/chat"
+	ds := cfg.Store
+	if ds == nil && cfg.StateDir != "" {
+		var err error
+		if ds, err = store.OpenFiles(cfg.StateDir); err != nil {
+			return nil, err
+		}
 	}
-	st, err := NewStore(dir, cfg.MaxConversations)
+	st, err := NewStore(ds, cfg.MaxConversations)
 	if err != nil {
 		return nil, err
 	}
 	lim := NewLimiter(cfg.BurstPerMinute, cfg.DailyCap, cfg.DiagnosesPerHour)
 	agent.Limits = lim
-	return &Service{cfg: cfg, store: st, consents: NewConsents(dir), limits: lim, agent: agent,
+	return &Service{cfg: cfg, store: st, consents: NewConsents(ds), limits: lim, agent: agent,
 		sem: make(chan struct{}, cfg.MaxConcurrent), log: log}, nil
 }
 

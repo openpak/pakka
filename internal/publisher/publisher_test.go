@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"pakka/internal/store"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -373,12 +374,12 @@ func TestFailedPublishStaysRetryable(t *testing.T) {
 
 func TestQueueSurvivesRestartAndInterruptedApprovalRetries(t *testing.T) {
 	dir := t.TempDir()
-	q, _ := NewQueue(dir)
+	q, _ := NewQueue(store.MustFiles(dir))
 	d, _ := q.Add(free(), "p", "model")
 	if _, err := q.Begin(d.ID, "r"); err != nil {
 		t.Fatal(err)
 	}
-	q2, err := NewQueue(dir)
+	q2, err := NewQueue(store.MustFiles(dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -392,7 +393,7 @@ func TestQueueSurvivesRestartAndInterruptedApprovalRetries(t *testing.T) {
 }
 
 func TestSameEventQueuesOnce(t *testing.T) {
-	q, _ := NewQueue("")
+	q, _ := NewQueue(nil)
 	a := free()
 	a.EventID = "highlights:2026-W44"
 	d1, _ := q.Add(a, "p", "m")

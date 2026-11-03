@@ -77,7 +77,7 @@ func TestEshopBrokenIngest(t *testing.T) {
 	ann := &stubAnnouncer{}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv := New(Options{
-		Broken:  eshop.NewBrokenTracker(ann, "staff1", time.Hour, "", log),
+		Broken:  eshop.NewBrokenTracker(ann, "staff1", time.Hour, nil, log),
 		MaxRuns: 4,
 		Log:     log,
 	})

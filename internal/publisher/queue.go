@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"pakka/internal/store"
 	"sort"
 	"sync"
 	"time"
@@ -22,20 +23,17 @@ var (
 // approves or rejects them. It persists to the state directory.
 type Queue struct {
 	mu     sync.Mutex
-	file   jsonFile
+	file   store.Doc
 	drafts map[string]*Draft
 	now    func() time.Time
 }
 
 // NewQueue loads the queue from dir (empty = memory only).
-func NewQueue(dir string) (*Queue, error) {
-	f, err := newJSONFile(dir, "publisher-queue.json")
-	if err != nil {
-		return nil, err
-	}
+func NewQueue(st *store.Store) (*Queue, error) {
+	f := st.Doc("publisher-queue")
 	q := &Queue{file: f, drafts: map[string]*Draft{}, now: time.Now}
 	var list []*Draft
-	if err := f.load(&list); err != nil {
+	if err := f.Load(&list); err != nil {
 		return nil, fmt.Errorf("queue: %w", err)
 	}
 	for _, d := range list {
@@ -55,7 +53,7 @@ func (q *Queue) persist() error {
 		list = append(list, d)
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].CreatedAt.Before(list[j].CreatedAt) })
-	return q.file.save(list)
+	return q.file.Save(list)
 }
 
 func newID() string {
