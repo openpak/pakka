@@ -226,6 +226,6 @@ conversations and consents) lives in Postgres, so one database backup covers it.
 `PAKKA_DATABASE_URL`; tables are created at start with a pool of at most 3 connections. Any feature
 that keeps state refuses to start without it (an instance running none of them, like the
 diagnostics-only status box, needs no database). On start, JSON files found in `PAKKA_STATE_DIR` are
-copied in once (existing rows are never overwritten and the files are left in place). For local
+copied in once (existing rows are never overwritten and each file is then renamed `<name>.imported-20261104` so an erased row cannot come back at the next start). For local
 development only, `PAKKA_ALLOW_FILE_STORE=1` keeps state in JSON files under `PAKKA_STATE_DIR`.
 Tests that need Postgres read `PAKKA_TEST_DATABASE_URL` and run with `-p 1`.

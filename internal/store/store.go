@@ -421,9 +421,10 @@ type Counts struct {
 var importDocs = []string{"chat-consent", "eshop-broken", "publisher-mirror", "publisher-queue", "publisher-done", "releases"}
 
 // ImportFiles copies the legacy state directory into Postgres. It never
-// touches or removes the files, never overwrites a row that already exists,
-// and imports the audit log only into an empty audit table, so it is safe on
-// every start.
+// deletes the files: once a file is in (or already in) the database it is
+// renamed to <name>.imported-20261104, so a later start cannot bring back a
+// row that was erased from Postgres since. It never overwrites a row that
+// already exists and imports the audit log only into an empty audit table.
 func (s *Store) ImportFiles(ctx context.Context, dir string, log *slog.Logger) (Counts, error) {
 	var n Counts
 	if s == nil || s.db == nil || dir == "" {
@@ -450,6 +451,7 @@ func (s *Store) ImportFiles(ctx context.Context, dir string, log *slog.Logger) (
 			return n, err
 		}
 		n.Docs += int(tag.RowsAffected())
+		retire(filepath.Join(dir, name+".json"))
 	}
 	entries, _ := os.ReadDir(filepath.Join(dir, "chat"))
 	for _, e := range entries {
@@ -472,6 +474,7 @@ func (s *Store) ImportFiles(ctx context.Context, dir string, log *slog.Logger) (
 			return n, err
 		}
 		n.Conversations += int(tag.RowsAffected())
+		retire(filepath.Join(dir, "chat", e.Name()))
 	}
 	var have int
 	if err := s.db.QueryRow(ctx, `SELECT count(*) FROM pakka_publisher_audit`).Scan(&have); err != nil {
@@ -494,8 +497,14 @@ func (s *Store) ImportFiles(ctx context.Context, dir string, log *slog.Logger) (
 			f.Close()
 		}
 	}
+	if _, err := os.Stat(filepath.Join(dir, "publisher-audit.jsonl")); err == nil {
+		retire(filepath.Join(dir, "publisher-audit.jsonl"))
+	}
 	return n, nil
 }
+
+// retire keeps an imported legacy file under a new name so it is never imported again.
+func retire(path string) { _ = os.Rename(path, path+".imported-20261104") }
 
 // MustFiles opens a file store at dir, or returns nil (memory only) for an
 // empty dir. It panics on failure and is meant for tests.

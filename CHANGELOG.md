@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.13.1 - 2026-11-04
+
+- The one-shot import of the legacy state directory renames each imported file to `<name>.imported-20261104` (never deletes it). Before, the files stayed and every start re-imported them, so a conversation erased from Postgres (account erasure, user delete) could come back. Test: import, erase, re-import. (openpak/prds#85)
+
 ## 0.13.0 - 2026-11-04
 
 - Discord account gate (`internal/discordgate`): before the model answers a free-text mention, the Discord user must be linked to an OpenPak account (website `GET /internal/discord/{id}`), be an adult with no supervision, and have accepted the Meta data-use notice. Child accounts are never answered, and anything that cannot be verified is refused (fails closed). Commands are unchanged.

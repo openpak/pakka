@@ -68,7 +68,7 @@ func TestDocsSurviveRestart(t *testing.T) {
 	}
 }
 
-func TestImportFilesKeepsFilesAndIsIdempotent(t *testing.T) {
+func TestImportFilesRenamesFilesAndIsIdempotent(t *testing.T) {
 	s := pg(t)
 	dir := t.TempDir()
 	write := func(name, body string) {
@@ -94,8 +94,8 @@ func TestImportFilesKeepsFilesAndIsIdempotent(t *testing.T) {
 	if err != nil || n != (Counts{}) {
 		t.Fatalf("second import = %+v %v", n, err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "publisher-audit.jsonl")); err != nil {
-		t.Fatal("source file removed")
+	if _, err := os.Stat(filepath.Join(dir, "publisher-audit.jsonl.imported-20261104")); err != nil {
+		t.Fatal("source file not kept under its imported name")
 	}
 	// A row changed after the first import is never overwritten by a re-import.
 	if err := s.Doc("chat-consent").Save(map[string]string{"changed": "yes"}); err != nil {
