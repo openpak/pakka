@@ -351,3 +351,17 @@ func TestMentionOwnerBypass(t *testing.T) {
 		t.Errorf("non-owner mention got %d replies", len(posts))
 	}
 }
+
+func TestMentionAccountGateRefuses(t *testing.T) {
+	b := testBot()
+	b.ownID = "999"
+	b.SetGate(func(string) (string, bool) { return "link your account", false })
+	posts := handle(t, b, incoming("<@999> why is my connection slow"))
+	if len(posts) != 1 || !strings.Contains(posts[0], "link your account") || !strings.Contains(posts[0], "<@u1>") {
+		t.Errorf("gated free text got %q", posts)
+	}
+	// Commands are not model answers and stay open.
+	if posts := handle(t, b, incoming("<@999> help")); len(posts) != 1 || strings.Contains(posts[0], "link your account") {
+		t.Errorf("command was gated: %q", posts)
+	}
+}

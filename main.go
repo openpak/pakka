@@ -21,6 +21,7 @@ import (
 	"pakka/internal/config"
 	"pakka/internal/diagnostics"
 	"pakka/internal/discord"
+	"pakka/internal/discordgate"
 	"pakka/internal/eshop"
 	"pakka/internal/investigate"
 	"pakka/internal/meta"
@@ -82,6 +83,13 @@ func run() error {
 		} else {
 			log.Info("discord gateway disabled: REST-only alerts mode")
 		}
+		// Only linked, adult, notice-accepting OpenPak accounts get a model answer on
+		// Discord; with no PAKKA_DISCORD_GATE_KEY the gate refuses everyone.
+		gate := discordgate.FromEnv()
+		if gate == nil {
+			log.Warn("discord account gate has no PAKKA_DISCORD_GATE_KEY: free-text answers are refused")
+		}
+		b.SetGate(gate.Func())
 		bot = b
 		relay = b.RedactingSender()
 		startMonitor(ctx, cfg, b, log)

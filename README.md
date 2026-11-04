@@ -146,6 +146,11 @@ the streams; actionable `[Area - service]` alerts go to
 only over localhost and the private ZeroTier network — never expose it
 publicly.
 
+Account gate: free-text answers on Discord need a linked, adult, notice-accepting
+OpenPak account (`PAKKA_DISCORD_GATE_KEY` = the website internal key,
+`PAKKA_DISCORD_GATE_URL` default `http://openpak-website:20010`); unset key
+refuses everyone, children are never answered.
+
 Multi-host alerts: additional hosts run the same image with
 `PAKKA_DISCORD_GATEWAY=false` (REST-only, no second gateway session) plus a
 local shipper posting to their own localhost ingest. Each instance announces

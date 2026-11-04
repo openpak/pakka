@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.13.0 - 2026-11-04
+
+- Discord account gate (`internal/discordgate`): before the model answers a free-text mention, the Discord user must be linked to an OpenPak account (website `GET /internal/discord/{id}`), be an adult with no supervision, and have accepted the Meta data-use notice. Child accounts are never answered, and anything that cannot be verified is refused (fails closed). Commands are unchanged.
+- Env: `PAKKA_DISCORD_GATE_KEY` (the website internal key; without it every free-text answer is refused), `PAKKA_DISCORD_GATE_URL`, `PAKKA_DISCORD_LINK_URL`, `PAKKA_DISCORD_NOTICE_URL`.
+
 ## 0.12.0 - 2026-11-04
 
 - Publisher review for the website admin queue: `POST /v1/publisher/drafts/{id}/approve` takes an optional edit of the free text (the model's proposal is kept on the draft as `original`, with `edited_by`), `.../reject` takes a reason, and `GET /v1/publisher/drafts/{id}` returns the draft with its audit history from Postgres. Edits are validated and audited (`edited`) before anything publishes; templated posts cannot be edited.

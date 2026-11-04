@@ -66,6 +66,7 @@ type Bot struct {
 	ownID        string
 	redactExtra  []string // internal endpoints/hostnames, never posted to chat
 	log          *slog.Logger
+	gate         func(userID string) (string, bool) // nil = no account gate
 }
 
 // New builds the bot (no network yet). metaClient may be nil; support
@@ -328,8 +329,17 @@ func (b *Bot) handleMention(ctx context.Context, sender Sender, in Incoming, res
 		b.runCommand(ctx, sender, in, args)
 		return
 	}
+	if b.gate != nil {
+		if msg, ok := b.gate(in.AuthorID); !ok {
+			b.reply(sender, in.ChannelID, "<@"+in.AuthorID+"> "+msg)
+			return
+		}
+	}
 	b.runAgent(ctx, sender, in, strings.Join(args, " "))
 }
+
+// SetGate requires a linked, adult, notice-accepting OpenPak account (discordgate) before the model answers.
+func (b *Bot) SetGate(g func(userID string) (string, bool)) { b.gate = g }
 
 // SetAgentMonitor attaches the status monitor as an agent source.
 func (b *Bot) SetAgentMonitor(m *Monitor) { b.agentMonitor = m }
