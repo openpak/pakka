@@ -182,6 +182,19 @@ broken-package set to `POST /v1/eshop-broken`; packages still broken after
 `PAKKA_ESHOP_BROKEN_AFTER` (default 168h) get one staff alert, batched.
 Broken first-seen persists in Postgres (`PAKKA_DATABASE_URL`; see State below), so redeploys keep the clock.
 
+**One shop surface for every console.** The broken tracker is per console:
+`POST /v1/shop/broken` takes `{"console": "wiiu", "broken": {...}}`, and
+`POST /v1/eshop-broken` stays as an alias for `console=switch` (run-hb.sh
+keeps working). `PAKKA_SHOP_CONSOLES` (default `switch`, e.g. `switch,wiiu`)
+names the managed consoles; `PAKKA_SHOP_CORE_URL` and `PAKKA_SHOP_CORE_KEY`
+point at shop-core, where the broken state is then kept durably (table
+`shop_broken`; the Switch's old state doc is migrated there once). Alerts
+read `[Switch - eshop]` for the Switch and `[<Console> - shop]` for the rest.
+`!pakka shop [console]` shows every shop's status (`!pakka eshop` is
+unchanged); staff also get `shop sync|pause|resume <console>`,
+`shop retire|unretire <console> <title> [reason]` (hides from new buyers,
+owners keep their download), `shop broken [console]` and `shop runs [console]`.
+
 Game landings: with `PAKKA_NEWS_ADMIN_BASE` (default
 `http://openpak-news-experiment:20043`), `PAKKA_NEWS_ADMIN_KEY` and both
 announce channels set, `POST /v1/land` (`name`, optional 16-hex `title_id`,

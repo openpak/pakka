@@ -77,7 +77,7 @@ func TestEshopBrokenIngest(t *testing.T) {
 	ann := &stubAnnouncer{}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv := New(Options{
-		Broken:  eshop.NewBrokenTracker(ann, "staff1", time.Hour, nil, log),
+		Shops:   map[string]*eshop.BrokenTracker{"switch": eshop.NewBrokenTracker(ann, "staff1", time.Hour, nil, log)},
 		MaxRuns: 4,
 		Log:     log,
 	})
@@ -92,6 +92,42 @@ func TestEshopBrokenIngest(t *testing.T) {
 	srv.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusBadRequest {
 		t.Fatalf("code = %d, want 400", res.Code)
+	}
+}
+
+func TestShopBrokenPerConsole(t *testing.T) {
+	sw, wu := &stubAnnouncer{}, &stubAnnouncer{}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	srv := New(Options{
+		Shops: map[string]*eshop.BrokenTracker{
+			"switch": eshop.NewConsoleBrokenTracker("switch", eshop.ConsoleLabel("switch", ""), sw, "staff1", time.Hour, nil, log),
+			"wiiu":   eshop.NewConsoleBrokenTracker("wiiu", eshop.ConsoleLabel("wiiu", "Wii U"), wu, "staff1", time.Hour, nil, log),
+		},
+		MaxRuns: 4, Log: log,
+	})
+	post := func(path, body string) int {
+		res := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodPost, path, strings.NewReader(body)))
+		return res.Code
+	}
+	if c := post("/v1/shop/broken", `{"console":"wiiu","broken":{"A":"x"}}`); c != http.StatusOK {
+		t.Fatalf("wiiu ingest = %d", c)
+	}
+	if c := post("/v1/shop/broken", `{"console":"ps9","broken":{}}`); c != http.StatusNotFound {
+		t.Fatalf("unknown console = %d, want 404", c)
+	}
+	if c := post("/v1/shop/broken", `{"broken":{}}`); c != http.StatusNotFound {
+		t.Fatalf("missing console = %d, want 404", c)
+	}
+	// The legacy path always means the Switch, whatever the body says.
+	if c := post("/v1/eshop-broken", `{"console":"wiiu","broken":{"B":"y"}}`); c != http.StatusOK {
+		t.Fatalf("legacy alias = %d", c)
+	}
+	if got := srv.shops["switch"].Snapshot(); len(got) != 1 || got["B"].IsZero() {
+		t.Fatalf("switch tracker after alias = %v", got)
+	}
+	if got := srv.shops["wiiu"].Snapshot(); len(got) != 1 || got["A"].IsZero() {
+		t.Fatalf("wiiu tracker = %v", got)
 	}
 }
 

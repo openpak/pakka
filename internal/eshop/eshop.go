@@ -117,6 +117,23 @@ type Status struct {
 	TriggerSet   bool
 }
 
+// SetPaused wires the shop's pause flag (staff `shop pause switch`); a paused shop still
+// detects and announces but starts no sync run.
+func (w *Watcher) SetPaused(f func() bool) { w.pausedFn = f }
+
+func (w *Watcher) isPaused() bool { return w.pausedFn != nil && w.pausedFn() }
+
+// RequestSync starts a sync run on staff request. It refuses while paused.
+func (w *Watcher) RequestSync(reason string, post func(string)) (bool, string) {
+	if w.trigger == nil {
+		return false, "no sync command is configured on this Pakka instance"
+	}
+	if w.isPaused() {
+		return false, "syncs are paused (`shop resume switch`)"
+	}
+	return w.trigger.Request(reason, post)
+}
+
 // Watcher polls the catalog and upstream releases, alerting staff on drift
 // and announcing landed updates publicly. The first poll only baselines,
 // so (re)starts never flood either channel.
@@ -124,6 +141,7 @@ type Watcher struct {
 	catalog  Catalog
 	releases Releases
 	trigger  Trigger // nil = detect and announce only
+	pausedFn func() bool
 	staff    Announcer
 	public   Announcer
 	staffID  string
@@ -328,7 +346,9 @@ func (w *Watcher) checkTitle(ctx context.Context, t Title, baselined bool) (land
 		served = "a 4TU build"
 	}
 	syncNote := "no sync command configured — the hourly sync will pick it up"
-	if w.trigger != nil {
+	if w.trigger != nil && w.isPaused() {
+		syncNote = "syncs are paused (`!pakka shop resume switch`)"
+	} else if w.trigger != nil {
 		reason := fmt.Sprintf("%s: %s -> %s", t.Name, served, rel.Tag)
 		if started, note := w.trigger.Request(reason, w.postStaff); started {
 			syncNote = "sync started"

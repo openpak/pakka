@@ -59,6 +59,7 @@ type Bot struct {
 	agentMonitor *Monitor
 	agentWatcher *LogWatcher
 	eshopWatcher *eshop.Watcher
+	shop         *ShopAdmin
 	publisher    PublisherAdmin    // nil = no publish commands
 	staff        map[string]string // post_notice name -> channel ID
 	router       *Router           // nil = support routing disabled
@@ -397,6 +398,8 @@ func (b *Bot) runCommand(ctx context.Context, sender Sender, in Incoming, args [
 		}
 	case "eshop":
 		out = b.cmdEshop()
+	case "shop":
+		out = b.cmdShop(ctx, in, args[1:])
 	case "publish":
 		out = b.cmdPublish(ctx, in, args[1:])
 	case "ack":
@@ -451,7 +454,7 @@ func (b *Bot) routeText(in Incoming, content string) (string, bool) {
 // isCommand reports whether name is a built-in command.
 func isCommand(name string) bool {
 	switch name {
-	case "help", "run", "investigate", "eshop", "publish", "ack", "unack":
+	case "help", "run", "investigate", "eshop", "shop", "publish", "ack", "unack":
 		return true
 	}
 	return false
@@ -462,9 +465,10 @@ func usage(prefix string) string {
 		"`%s run [scenario] [fixture|live]` — run checks (default: all-pass fixture)\n"+
 		"`%s investigate [fixture [scenario]|live] <symptoms>` — diagnose a problem (ops channels only)\n"+
 		"`%s eshop` — eShop update watch status\n"+
+		"`%s shop [console]` — shop status for every console (staff: sync, pause, retire, broken, runs)\n"+
 		"`%s publish list|show|approve|reject` — publishing review queue (staff only)\n"+
 		"`%s ack|unack [service] [duration]` — silence DOWN alerts (default 1h); bare `ack` lists",
-		prefix, prefix, prefix, prefix, prefix)
+		prefix, prefix, prefix, prefix, prefix, prefix)
 }
 
 // cmdRun executes a diagnostic suite: `run [scenario] [fixture|live]`.

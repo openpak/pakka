@@ -22,7 +22,7 @@ const maxBody = 64 << 10
 
 // Options wires the server dependencies. Model may be nil when no API key
 // is configured; live investigations then report unavailable. LogWatcher
-// may be nil; log intake then reports disabled. Broken may be nil; broken
+// may be nil; log intake then reports disabled. Shops may be empty; broken
 // intake then reports disabled. Lander may be nil; landings then report
 // disabled. Relay may be nil; the announce relay then reports disabled.
 type Options struct {
@@ -33,7 +33,7 @@ type Options struct {
 	Publisher    *publisher.Service // nil = publisher API off
 	Writer       publisher.Writer   // drafts the weekly highlights; nil = plain list
 	Chat         *chat.Service
-	Broken       *eshop.BrokenTracker
+	Shops        map[string]*eshop.BrokenTracker // console -> broken tracker
 	Lander       *news.Lander
 	Relay        discord.Sender
 	MaxRuns      int
@@ -49,7 +49,7 @@ type Server struct {
 	publisher    *publisher.Service
 	writer       publisher.Writer
 	chat         *chat.Service
-	broken       *eshop.BrokenTracker
+	shops        map[string]*eshop.BrokenTracker
 	lander       *news.Lander
 	relay        discord.Sender
 	sem          chan struct{}
@@ -70,7 +70,7 @@ func New(opts Options) *Server {
 		publisher:    opts.Publisher,
 		writer:       opts.Writer,
 		chat:         opts.Chat,
-		broken:       opts.Broken,
+		shops:        opts.Shops,
 		lander:       opts.Lander,
 		relay:        opts.Relay,
 		sem:          make(chan struct{}, maxRuns),
@@ -90,7 +90,8 @@ func (s *Server) Handler() http.Handler {
 	if s.chat != nil && s.chat.Enabled() {
 		s.chat.Mount(mux)
 	}
-	mux.HandleFunc("POST /v1/eshop-broken", s.createEshopBroken)
+	mux.HandleFunc("POST /v1/shop/broken", s.createShopBroken)
+	mux.HandleFunc("POST /v1/eshop-broken", s.createEshopBroken) // alias: console=switch
 	mux.HandleFunc("POST /v1/land", s.createLanding)
 	mux.HandleFunc("POST /v1/announce", s.createAnnounce)
 	return mux

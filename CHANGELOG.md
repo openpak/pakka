@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.14.0 - 2026-11-04
+
+- One console-neutral shop surface (openpak/prds#124, phase P2). The broken-package tracker has a console field: `POST /v1/shop/broken` `{console, broken}`; `POST /v1/eshop-broken` stays as an alias for `console=switch`. Alerts keep the `[Switch - eshop]` wording for the Switch and read `[<Console> - shop]` for others.
+- Durable in shop-core: with `PAKKA_SHOP_CORE_URL`/`PAKKA_SHOP_CORE_KEY` the tracker keeps its state in shop-core's `shop_broken` table; the Switch's old `eshop-broken` state doc is moved there once and emptied. Without them nothing changes. A shop-core that is down at start is retried on every report and never overwritten by a partial view.
+- `!pakka shop [console]` (status of every managed shop; `!pakka eshop` is unchanged) and staff commands `shop sync|pause|resume <console>`, `shop retire|unretire <console> <title> [reason]`, `shop broken [console]`, `shop runs [console]`. A paused shop starts no sync run. `PAKKA_SHOP_CONSOLES` names the managed consoles (default `switch`).
+
 ## 0.13.1 - 2026-11-04
 
 - The one-shot import of the legacy state directory renames each imported file to `<name>.imported-20261104` (never deletes it). Before, the files stayed and every start re-imported them, so a conversation erased from Postgres (account erasure, user delete) could come back. Test: import, erase, re-import. (openpak/prds#85)

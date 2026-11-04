@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -29,6 +30,7 @@ import (
 	"pakka/internal/publisher"
 	"pakka/internal/releases"
 	"pakka/internal/server"
+	"pakka/internal/shopcore"
 	"pakka/internal/store"
 )
 
@@ -66,7 +68,7 @@ func run() error {
 	defer st.Close()
 
 	var bot *discord.Bot
-	var eshopBroken *eshop.BrokenTracker
+	var shops map[string]*eshop.BrokenTracker
 	var lander *news.Lander
 	var relay discord.Sender
 	if cfg.DiscordToken != "" {
@@ -95,7 +97,7 @@ func run() error {
 		startMonitor(ctx, cfg, b, log)
 		startWelcomer(ctx, cfg, b, log)
 		startMatchmaking(ctx, cfg, b, log)
-		eshopBroken = startEshop(ctx, cfg, b, st, log)
+		shops = startEshop(ctx, cfg, b, st, log)
 		lander = startLanding(cfg, b, log)
 		startReleases(ctx, cfg, b, st, log)
 	} else {
@@ -123,7 +125,7 @@ func run() error {
 			Publisher:    pub,
 			Writer:       writer,
 			Chat:         chatSvc,
-			Broken:       eshopBroken,
+			Shops:        shops,
 			Lander:       lander,
 			Relay:        relay,
 			MaxRuns:      cfg.MaxRuns,
@@ -180,8 +182,9 @@ func startMonitor(ctx context.Context, cfg config.Config, b *discord.Bot, log *s
 // startEshop launches eShop update monitoring when the store API and both
 // announce channels are configured. Run on one host only: every instance
 // would otherwise post the same announcements. It returns the broken-build
-// tracker for the HTTP intake, or nil when the watcher is disabled.
-func startEshop(ctx context.Context, cfg config.Config, b *discord.Bot, st *store.Store, log *slog.Logger) *eshop.BrokenTracker {
+// trackers (one per managed console) for the HTTP intake, or nil when the
+// watcher is disabled.
+func startEshop(ctx context.Context, cfg config.Config, b *discord.Bot, st *store.Store, log *slog.Logger) map[string]*eshop.BrokenTracker {
 	if cfg.EshopAPIBase == "" || cfg.AlertsChannel == "" || cfg.EshopAnnounceChannel == "" {
 		log.Info("eshop watcher disabled: needs api base plus staff and announce channels")
 		return nil
@@ -209,13 +212,68 @@ func startEshop(ctx context.Context, cfg config.Config, b *discord.Bot, st *stor
 		cfg.AlertsChannel, cfg.EshopAnnounceChannel,
 		sources, log)
 	b.SetEshopWatcher(w)
-	tracker := eshop.NewBrokenTracker(
-		discord.SenderAnnouncer{Sender: b.RedactingSender()},
-		cfg.AlertsChannel, cfg.EshopBrokenAfter, st, log)
+	staff := discord.SenderAnnouncer{Sender: b.RedactingSender()}
+	var core *shopcore.Client
+	if cfg.ShopCoreURL != "" {
+		core = shopcore.New(cfg.ShopCoreURL, cfg.ShopCoreKey)
+	} else {
+		log.Info("shop-core not configured: the Switch broken tracker stays on the legacy state doc")
+	}
+	trackers := map[string]*eshop.BrokenTracker{}
+	for _, console := range strings.Split(cfg.ShopConsoles, ",") {
+		console = strings.ToLower(strings.TrimSpace(console))
+		if console == "" || trackers[console] != nil {
+			continue
+		}
+		label := eshop.ConsoleLabel(console, shopConsoleNames[console])
+		switch {
+		case core != nil:
+			t := eshop.NewConsoleBrokenTracker(console, label, staff, cfg.AlertsChannel, cfg.EshopBrokenAfter,
+				eshop.CoreBackend(core, console), log)
+			if console == "switch" {
+				t.MigrateLegacy(st.Doc("eshop-broken"))
+			}
+			trackers[console] = t
+		case console == "switch":
+			trackers[console] = eshop.NewBrokenTracker(staff, cfg.AlertsChannel, cfg.EshopBrokenAfter, st, log)
+		default:
+			log.Warn("shop broken watch: no shop-core, memory only", "console", console)
+			trackers[console] = eshop.NewConsoleBrokenTracker(console, label, staff, cfg.AlertsChannel, cfg.EshopBrokenAfter, nil, log)
+		}
+	}
+	b.SetShopAdmin(discord.ShopAdmin{Core: core, Watcher: w, Trackers: trackers, Consoles: shopConsoleList(trackers)})
+	if core != nil {
+		w.SetPaused(func() bool {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			cs, err := core.Consoles(ctx)
+			if err != nil {
+				return false
+			}
+			for _, c := range cs {
+				if c.Console == "switch" {
+					return c.Paused
+				}
+			}
+			return false
+		})
+	}
 	go w.Run(ctx, cfg.EshopInterval)
 	go w.RunDigest(ctx, cfg.EshopDigestInterval)
-	log.Info("eshop watcher started", "sources", len(sources))
-	return tracker
+	log.Info("eshop watcher started", "sources", len(sources), "shop_consoles", len(trackers))
+	return trackers
+}
+
+// shopConsoleNames are display names for the consoles Pakka can manage.
+var shopConsoleNames = map[string]string{"switch": "Switch", "wiiu": "Wii U"}
+
+func shopConsoleList(m map[string]*eshop.BrokenTracker) []string {
+	out := make([]string, 0, len(m))
+	for c := range m {
+		out = append(out, c)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // startWelcomer launches newcomer welcomes when a welcome channel is set.

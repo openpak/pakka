@@ -123,6 +123,15 @@ type Config struct {
 	// EshopBrokenAfter is how long a package may stay in the sync's broken
 	// set before staff is alerted.
 	EshopBrokenAfter time.Duration
+	// ShopConsoles names the consoles whose shops Pakka manages (broken
+	// tracker, staff commands), comma separated. Default: switch.
+	ShopConsoles string
+	// ShopCoreURL and ShopCoreKey reach shop-core, the console-neutral shop
+	// catalog that holds the durable broken-package state. Empty = the
+	// Switch tracker stays on the legacy state doc and other consoles are
+	// memory only.
+	ShopCoreURL string
+	ShopCoreKey string
 	// StateDir persists watcher state across restarts (broken first-seen).
 	// Empty keeps memory only.
 	StateDir string
@@ -190,6 +199,9 @@ func Load() Config {
 		EshopAnnounceChannel:     os.Getenv("PAKKA_DISCORD_ANNOUNCE_CHANNEL"),
 		EshopDigestInterval:      getenvDuration("PAKKA_ESHOP_DIGEST_INTERVAL", 168*time.Hour),
 		EshopBrokenAfter:         getenvDuration("PAKKA_ESHOP_BROKEN_AFTER", 168*time.Hour),
+		ShopConsoles:             getenv("PAKKA_SHOP_CONSOLES", "switch"),
+		ShopCoreURL:              os.Getenv("PAKKA_SHOP_CORE_URL"),
+		ShopCoreKey:              os.Getenv("PAKKA_SHOP_CORE_KEY"),
 		StateDir:                 os.Getenv("PAKKA_STATE_DIR"),
 		MatchmakingChannel:       os.Getenv("PAKKA_DISCORD_MATCHMAKING_CHANNEL"),
 		MatchmakingMaxAge:        getenvDuration("PAKKA_MATCHMAKING_MAX_AGE", 24*time.Hour),
