@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.14.1 - 2026-11-04
+
+- The `shop` commands are enabled by `PAKKA_SHOP_CORE_URL` alone, so the gateway instance (which has no eShop watcher settings) answers `!pakka shop` too; `sync` and the Switch watch detail stay with the instance that runs the watcher.
+
 ## 0.14.0 - 2026-11-04
 
 - One console-neutral shop surface (openpak/prds#124, phase P2). The broken-package tracker has a console field: `POST /v1/shop/broken` `{console, broken}`; `POST /v1/eshop-broken` stays as an alias for `console=switch`. Alerts keep the `[Switch - eshop]` wording for the Switch and read `[<Console> - shop]` for others.
