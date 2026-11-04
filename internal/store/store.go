@@ -341,6 +341,78 @@ func (s *Store) AuditTail(n int) ([][]byte, error) {
 	return nil, nil
 }
 
+// AuditFor returns every audit document for one draft, oldest first: those
+// carrying its draft id and those carrying its event id (the publish
+// attempt and outcome are written under the event id).
+func (s *Store) AuditFor(draftID, eventID string) ([][]byte, error) {
+	if draftID == "" && eventID == "" {
+		return nil, nil
+	}
+	switch {
+	case s == nil:
+		return nil, nil
+	case s.db != nil:
+		c, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		rows, err := s.db.Query(c, `SELECT doc FROM pakka_publisher_audit
+			WHERE ($1 <> '' AND doc->>'draft_id' = $1) OR ($2 <> '' AND doc->>'event_id' = $2) ORDER BY id`, draftID, eventID)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		var out [][]byte
+		for rows.Next() {
+			var b []byte
+			if err := rows.Scan(&b); err != nil {
+				return nil, err
+			}
+			out = append(out, b)
+		}
+		return out, rows.Err()
+	case s.dir != "":
+		f, err := os.Open(filepath.Join(s.dir, "publisher-audit.jsonl"))
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+		var out [][]byte
+		sc := bufio.NewScanner(f)
+		sc.Buffer(make([]byte, 64*1024), 1<<20)
+		for sc.Scan() {
+			var e struct {
+				DraftID string `json:"draft_id"`
+				EventID string `json:"event_id"`
+			}
+			if json.Unmarshal(sc.Bytes(), &e) != nil {
+				continue
+			}
+			if (draftID != "" && e.DraftID == draftID) || (eventID != "" && e.EventID == eventID) {
+				out = append(out, append([]byte(nil), sc.Bytes()...))
+			}
+		}
+		return out, nil
+	}
+	return nil, nil
+}
+
+// ChatDeleteAccount removes every conversation owned by account and returns
+// the ids it removed from the database or directory.
+func (s *Store) ChatDeleteAccount(account string) error {
+	switch {
+	case s == nil:
+		return nil
+	case s.db != nil:
+		c, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		_, err := s.db.Exec(c, `DELETE FROM pakka_chat_conversations WHERE account=$1`, account)
+		return err
+	}
+	return nil // file backend: the chat store deletes each id it holds
+}
+
 // Counts is what ImportFiles moved.
 type Counts struct {
 	Docs, Conversations, Audit int

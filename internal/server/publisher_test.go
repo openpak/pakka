@@ -140,3 +140,38 @@ func TestKillEndpointStopsPublishing(t *testing.T) {
 		t.Fatalf("%d posts=%d", rec.Code, len(ov.posts))
 	}
 }
+
+func TestDraftEditApproveRejectAndHistoryOverHTTP(t *testing.T) {
+	h, ov := pubServer(t, "k", publisher.CatAnnounce)
+	mk := func(body string) string {
+		rec := call(h, "POST", "/v1/publisher/drafts", "k", `{"tool":"openverse.post","category":"announcement","body":"`+body+`","community":{"name":"Announcements"}}`)
+		var out struct {
+			DraftID string `json:"draft_id"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		return out.DraftID
+	}
+	a, b := mk("first"), mk("second")
+	rec := call(h, "POST", "/v1/publisher/drafts/"+a+"/approve", "k", `{"body":"first, edited"}`)
+	if rec.Code != http.StatusOK || len(ov.posts) != 1 {
+		t.Fatalf("edited approve: %d %s", rec.Code, rec.Body)
+	}
+	for _, p := range ov.posts {
+		if p.Body != "first, edited" {
+			t.Fatalf("published %q", p.Body)
+		}
+	}
+	rec = call(h, "GET", "/v1/publisher/drafts/"+a, "k", "")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"edited"`) || !strings.Contains(rec.Body.String(), `"original"`) {
+		t.Fatalf("history: %d %s", rec.Code, rec.Body)
+	}
+	if rec := call(h, "POST", "/v1/publisher/drafts/"+b+"/reject", "k", `{"reason":"off topic"}`); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "off topic") {
+		t.Fatalf("reject: %d %s", rec.Code, rec.Body)
+	}
+	if rec := call(h, "GET", "/v1/publisher/drafts/nope", "k", ""); rec.Code != http.StatusNotFound {
+		t.Fatalf("missing: %d", rec.Code)
+	}
+	if rec := call(h, "GET", "/v1/publisher/drafts/"+a, "", ""); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated: %d", rec.Code)
+	}
+}

@@ -484,3 +484,25 @@ func TestToolSchemasSerialiseForTheAPI(t *testing.T) {
 		t.Errorf("a tool schema carries required:null, which the model API rejects: %s", b)
 	}
 }
+
+func TestEraseAccountRemovesOnlyThatAccountsChats(t *testing.T) {
+	r := newRig(t, &scriptModel{}, nil)
+	a := mustConv(t, r, "acct-a", "g-a")
+	b := mustConv(t, r, "acct-b", "g-b")
+	if c, _ := r.as(t, "acct-a", "g-a", "DELETE", "/v1/chat/account", nil); c != 200 {
+		t.Fatalf("erase: %d", c)
+	}
+	if c, _ := r.as(t, "acct-a", "g-a", "GET", "/v1/chat/conversations/"+a, nil); c != 404 {
+		t.Errorf("erased conversation readable: %d", c)
+	}
+	if c, _ := r.as(t, "acct-b", "g-b", "GET", "/v1/chat/conversations/"+b, nil); c != 200 {
+		t.Errorf("other account lost its chat: %d", c)
+	}
+	if c, _ := r.as(t, "acct-a", "g-a", "DELETE", "/v1/chat/account", nil); c != 200 {
+		t.Errorf("repeat erase: %d", c)
+	}
+	st, _ := NewStore(store.MustFiles(r.svc.cfg.StateDir), 3)
+	if _, err := st.Get("acct-a", a); err == nil {
+		t.Error("conversation survived reload")
+	}
+}

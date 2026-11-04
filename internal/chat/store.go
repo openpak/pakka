@@ -169,6 +169,23 @@ func (s *Store) Delete(account, id string) error {
 	return nil
 }
 
+// EraseAccount deletes every conversation account owns and reports how many.
+// Used when the account is erased everywhere; repeating it is harmless.
+func (s *Store) EraseAccount(account string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for id, c := range s.byID {
+		if c.Account == account {
+			delete(s.byID, id)
+			_ = s.st.ChatDelete(id)
+			n++
+		}
+	}
+	_ = s.st.ChatDeleteAccount(account)
+	return n
+}
+
 // Purge deletes conversations idle longer than retention and returns how many.
 func (s *Store) Purge(retention time.Duration) int {
 	s.mu.Lock()

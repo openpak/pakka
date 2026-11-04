@@ -21,7 +21,7 @@ The event endpoint is ready; the game servers do not call it yet.
 
 Anything with free text, and anything that is not a post: `highlights` (the weekly "Best of OpenVerse", written by the model from the week's most liked posts, links and mentions stripped), `announcement`, `community` (new communities), `news` (News articles), `boss`. A "send as News" flag on any post also makes it a draft.
 
-Staff approve with `!pakka publish list|show|approve|reject <id>` in Discord (moderator role or guild owner; with no moderator role set only the owner passes) or through the admin API below. Approval needs the `queue:approve` scope plus the tool's own scope, refuses while the kill switch is on or the category is off, and cannot publish twice. A failed approval stays in the queue and can be retried; every post carries an event id, so a retry never duplicates. New drafts are announced in the staff alerts channel. The website `/admin` is not integrated.
+Staff approve with `!pakka publish list|show|approve|reject <id>` in Discord (moderator role or guild owner; with no moderator role set only the owner passes) or through the admin API below. Approval needs the `queue:approve` scope plus the tool's own scope, refuses while the kill switch is on or the category is off, and cannot publish twice. A failed approval stays in the queue and can be retried; every post carries an event id, so a retry never duplicates. New drafts are announced in the staff alerts channel. The website `/admin` has the queue page (System Settings, Pakka posts): approve, edit then approve, or reject with a reason, with each draft's audit history.
 
 ## Scopes
 
@@ -55,11 +55,10 @@ Tool scopes: `openverse:post`, `openverse:community`, `news:publish`, `boss:queu
 
 All need `X-Admin-Key`; with no admin key set they answer 404. `X-Approver` names the person for the audit log. Localhost and the private network only.
 
-`GET /v1/publisher/status`, `GET /v1/publisher/drafts?status=pending|all`, `POST /v1/publisher/drafts` (queue an action), `POST /v1/publisher/drafts/{id}/approve`, `.../reject`, `POST /v1/publisher/run` (staff publish now), `POST /v1/publisher/events`, `POST /v1/publisher/mirror` (`{topic, news_id}`), `POST /v1/publisher/mirror/run`, `POST /v1/publisher/highlights/run`, `POST /v1/publisher/kill`, `GET /v1/publisher/audit?n=`, `DELETE /v1/publisher/posts/{id}` (remove one of Pakka's own OpenVerse posts; rollback and test cleanup, audited).
+`GET /v1/publisher/status`, `GET /v1/publisher/drafts?status=pending|all`, `GET /v1/publisher/drafts/{id}` (the draft with its audit history), `POST /v1/publisher/drafts` (queue an action), `POST /v1/publisher/drafts/{id}/approve` (optional JSON `{body,title,description}` edits the free text first; the proposal is kept on the draft as `original`), `.../reject` (optional `{reason}`), `POST /v1/publisher/run` (staff publish now), `POST /v1/publisher/events`, `POST /v1/publisher/mirror` (`{topic, news_id}`), `POST /v1/publisher/mirror/run`, `POST /v1/publisher/highlights/run`, `POST /v1/publisher/kill`, `GET /v1/publisher/audit?n=`, `DELETE /v1/publisher/posts/{id}` (remove one of Pakka's own OpenVerse posts; rollback and test cleanup, audited).
 
 ## Known limits
 
 - `news.publish` goes through the News admin API (create article, publish). Consoles read News from nx-bcat; while nx-bcat serves its static tree (`NX_BCAT_SYNC_URL` unset) an article published this way does not reach consoles. The News to OpenVerse mirror does not depend on that.
 - The Discord approval commands need the process that holds the queue to have the Discord gateway. In prod the publisher runs on the REST-only instance, so approvals go through the admin API there.
-- The website `/admin` queue page is not built.
 - Splatfest, tournament and course posts wait for those game servers to call `POST /v1/publisher/events`.

@@ -863,3 +863,86 @@ func TestDeletePostIsStaffOnlyAndAudited(t *testing.T) {
 		t.Fatalf("not audited: %v", got)
 	}
 }
+
+// --- staff review: edit, reject with reason, history ----------------------
+
+func TestEditedApprovalPublishesTheEditAndKeepsTheOriginal(t *testing.T) {
+	s, ov, _ := newSvc(t, CatHighlights)
+	ctx := context.Background()
+	a := Action{Tool: ToolPost, Category: CatHighlights, Body: "Best of OpenVerse\nGreat week", Community: CommunityRef{Name: "Announcements"}}
+	out, _ := s.Submit(ctx, Model(), a, false)
+	d, err := s.ApproveEdited(ctx, Staff("rev"), out.DraftID, Edit{Body: "Best of OpenVerse\nA calmer week"})
+	if err != nil || d.Status != StatusPublished {
+		t.Fatalf("%+v %v", d, err)
+	}
+	if d.Original == nil || d.Original.Body != a.Body || d.EditedBy != "staff:rev" || d.Action.Body != "Best of OpenVerse\nA calmer week" {
+		t.Fatalf("edit not recorded: %+v", d)
+	}
+	ov.mu.Lock()
+	var got string
+	for _, p := range ov.posts {
+		got = p.Body
+	}
+	ov.mu.Unlock()
+	if got != "Best of OpenVerse\nA calmer week" {
+		t.Fatalf("published %q", got)
+	}
+	hist, err := s.DraftHistory(out.DraftID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, e := range hist {
+		seen[e.Event] = true
+	}
+	for _, want := range []string{"queued", "edited", "approved", "attempt", "published"} {
+		if !seen[want] {
+			t.Errorf("history lacks %q: %+v", want, hist)
+		}
+	}
+}
+
+func TestInvalidEditChangesNothingAndTemplatesCannotBeEdited(t *testing.T) {
+	s, ov, _ := newSvc(t, CatHighlights, CatSplatfest)
+	ctx := context.Background()
+	a := Action{Tool: ToolPost, Category: CatHighlights, Body: "Hello", Community: CommunityRef{Name: "Announcements"}}
+	o2, err := s.Submit(ctx, Model(), a, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ApproveEdited(ctx, Model(), o2.DraftID, Edit{Body: "x"}); err == nil {
+		t.Fatal("model approved")
+	}
+	d, _ := s.Queue().Get(o2.DraftID)
+	if d.Status != StatusPending || d.Action.Body != "Hello" || ov.postCount() != 0 {
+		t.Fatalf("changed: %+v", d)
+	}
+	if _, err := s.Queue().Edit(o2.DraftID, "x", Edit{Body: "y"}, s.preview); err != nil {
+		t.Fatal(err)
+	}
+	tmpl := splatfest()
+	tmpl.Template = "result"
+	q := s.Queue()
+	td, _ := q.Add(tmpl, "p", "system:events")
+	if _, err := q.Edit(td.ID, "rev", Edit{Body: "free text"}, s.preview); !errors.Is(err, ErrBadAction) {
+		t.Fatalf("template edit: %v", err)
+	}
+}
+
+func TestRejectKeepsTheReasonInDraftAndAudit(t *testing.T) {
+	s, ov, _ := newSvc(t, CatHighlights)
+	ctx := context.Background()
+	out, _ := s.Submit(ctx, Model(), Action{Tool: ToolPost, Category: CatHighlights, Body: "Hello", Community: CommunityRef{Name: "Announcements"}}, false)
+	d, err := s.RejectWithReason(Staff("rev"), out.DraftID, "  too chatty  ")
+	if err != nil || d.Status != StatusRejected || d.RejectReason != "too chatty" {
+		t.Fatalf("%+v %v", d, err)
+	}
+	hist, _ := s.DraftHistory(out.DraftID)
+	last := hist[len(hist)-1]
+	if last.Event != "rejected" || last.Detail != "too chatty" || ov.postCount() != 0 {
+		t.Fatalf("%+v", hist)
+	}
+	if _, err := s.Approve(ctx, Staff("rev"), out.DraftID); !errors.Is(err, ErrNotPending) {
+		t.Fatalf("approved a rejected draft: %v", err)
+	}
+}

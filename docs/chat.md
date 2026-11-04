@@ -20,6 +20,7 @@ account argument, and the model never sees a grant.
 | `POST /v1/chat/consent`, `DELETE` | accept or withdraw the data-use notice |
 | `GET/POST /v1/chat/conversations` | list mine, start one |
 | `GET/DELETE /v1/chat/conversations/{id}` | read, delete |
+| `DELETE /v1/chat/account` | account erasure: every conversation, the consent record and the rate state of the account (idempotent; the website's erasure step) |
 | `POST /v1/chat/conversations/{id}/messages` | `{"text"}`; answers `text/event-stream`: `start`, `tool`, `delta`, `done` or `error` |
 
 Gates, in order: service key, eligibility (adult, not supervised; fail closed),

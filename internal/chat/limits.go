@@ -106,3 +106,12 @@ func (l *Limiter) Sweep() {
 		}
 	}
 }
+
+// Forget drops everything held about account (erasure).
+func (l *Limiter) Forget(account string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.win, account)
+	delete(l.day, account)
+	delete(l.dg, account)
+}

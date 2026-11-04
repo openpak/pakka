@@ -196,6 +196,13 @@ func (s *Service) Submit(ctx context.Context, actor Actor, a Action, now bool) (
 // twice cannot publish twice (the queue lets one approval through and the
 // event id repeats safely on the far side).
 func (s *Service) Approve(ctx context.Context, reviewer Actor, id string) (Draft, error) {
+	return s.ApproveEdited(ctx, reviewer, id, Edit{})
+}
+
+// ApproveEdited is Approve after the reviewer rewrote the draft's free text.
+// The edit is checked and audited (with the proposed text kept on the draft)
+// before anything is published; a failed check changes nothing.
+func (s *Service) ApproveEdited(ctx context.Context, reviewer Actor, id string, edit Edit) (Draft, error) {
 	d, ok := s.queue.Get(id)
 	if !ok {
 		return Draft{}, ErrNoDraft
@@ -209,6 +216,27 @@ func (s *Service) Approve(ctx context.Context, reviewer Actor, id string) (Draft
 	}
 	if s.Killed() {
 		return Draft{}, s.deny(reviewer, a, ErrKilled)
+	}
+	if !edit.Empty() {
+		edited := a
+		if edit.Body != "" {
+			edited.Body = edit.Body
+		}
+		if edit.Title != "" {
+			edited.Title = edit.Title
+		}
+		if edit.Description != "" {
+			edited.Description = edit.Description
+		}
+		if err := s.validate(&edited); err != nil {
+			return Draft{}, err
+		}
+		nd, err := s.queue.Edit(id, reviewer.Name, edit, s.preview)
+		if err != nil {
+			return Draft{}, err
+		}
+		a = nd.Action
+		_ = s.audit.Record(AuditEntry{Actor: reviewer.Name, Event: "edited", Tool: a.Tool, Category: a.Category, EventID: a.EventID, DraftID: id, Detail: nd.Preview})
 	}
 	if _, err := s.queue.Begin(id, reviewer.Name); err != nil {
 		return Draft{}, err
@@ -229,15 +257,30 @@ func (s *Service) Approve(ctx context.Context, reviewer Actor, id string) (Draft
 
 // Reject discards a draft.
 func (s *Service) Reject(reviewer Actor, id string) (Draft, error) {
+	return s.RejectWithReason(reviewer, id, "")
+}
+
+// RejectWithReason discards a draft and records why.
+func (s *Service) RejectWithReason(reviewer Actor, id, reason string) (Draft, error) {
 	if !reviewer.Scopes[ScopeApprove] {
 		return Draft{}, s.deny(reviewer, Action{}, ErrForbidden)
 	}
-	d, err := s.queue.Reject(id, reviewer.Name)
+	reason = truncRunes(strings.TrimSpace(reason), 500)
+	d, err := s.queue.Reject(id, reviewer.Name, reason)
 	if err != nil {
 		return Draft{}, err
 	}
-	_ = s.audit.Record(AuditEntry{Actor: reviewer.Name, Event: "rejected", Tool: d.Action.Tool, Category: d.Action.Category, EventID: d.Action.EventID, DraftID: id})
+	_ = s.audit.Record(AuditEntry{Actor: reviewer.Name, Event: "rejected", Tool: d.Action.Tool, Category: d.Action.Category, EventID: d.Action.EventID, DraftID: id, Detail: reason})
 	return d, nil
+}
+
+// DraftHistory is every audit line for one draft, oldest first.
+func (s *Service) DraftHistory(id string) ([]AuditEntry, error) {
+	d, ok := s.queue.Get(id)
+	if !ok {
+		return nil, ErrNoDraft
+	}
+	return s.audit.ForDraft(id, d.Action.EventID)
 }
 
 // run executes one action: kill switch, configuration, audit-before-publish

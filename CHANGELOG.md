@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.0 - 2026-11-04
+
+- Publisher review for the website admin queue: `POST /v1/publisher/drafts/{id}/approve` takes an optional edit of the free text (the model's proposal is kept on the draft as `original`, with `edited_by`), `.../reject` takes a reason, and `GET /v1/publisher/drafts/{id}` returns the draft with its audit history from Postgres. Edits are validated and audited (`edited`) before anything publishes; templated posts cannot be edited.
+- `DELETE /v1/chat/account`: erases every chat conversation, the consent record and the rate-limit state of one account, for the website's account-erasure finaliser.
+
 ## 0.11.0 - 2026-11-03
 
 - All durable state moved to Postgres (`PAKKA_DATABASE_URL`, pool of 3): chat consents and conversations, eShop broken first-seen, release watch, publisher queue, mirror, done set and audit log. One database backup now covers Pakka.

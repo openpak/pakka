@@ -175,7 +175,24 @@ type Draft struct {
 	DecidedAt *time.Time `json:"decided_at,omitempty"`
 	Result    *Result    `json:"result,omitempty"`
 	Error     string     `json:"error,omitempty"`
+	// RejectReason is the staff member's reason for a rejection.
+	RejectReason string `json:"reject_reason,omitempty"`
+	// Original is the action as the model proposed it, kept when a reviewer
+	// edited the text before approving; EditedBy names that reviewer.
+	Original *Action `json:"original,omitempty"`
+	EditedBy string  `json:"edited_by,omitempty"`
 }
+
+// Edit is a reviewer's change to a draft's free text. Empty fields are left
+// alone. Templated drafts have no free text and cannot be edited.
+type Edit struct {
+	Body        string `json:"body,omitempty"`
+	Title       string `json:"title,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+// Empty reports whether the edit changes nothing.
+func (e Edit) Empty() bool { return e == Edit{} }
 
 func (d Draft) String() string {
 	return fmt.Sprintf("#%s [%s/%s] %s", d.ID, d.Action.Tool, d.Action.Category, d.Preview)

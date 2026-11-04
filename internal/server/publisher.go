@@ -25,6 +25,7 @@ func (s *Server) registerPublisher(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/publisher/status", h(s.pubStatus))
 	mux.HandleFunc("GET /v1/publisher/drafts", h(s.pubDrafts))
 	mux.HandleFunc("POST /v1/publisher/drafts", h(s.pubDraftCreate))
+	mux.HandleFunc("GET /v1/publisher/drafts/{id}", h(s.pubDraft))
 	mux.HandleFunc("POST /v1/publisher/drafts/{id}/approve", h(s.pubApprove))
 	mux.HandleFunc("POST /v1/publisher/drafts/{id}/reject", h(s.pubReject))
 	mux.HandleFunc("POST /v1/publisher/run", h(s.pubRun))
@@ -157,8 +158,32 @@ func (s *Server) pubRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// pubDraft returns one draft with its audit history.
+func (s *Server) pubDraft(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	d, ok := s.publisher.Queue().Get(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, "no such draft")
+		return
+	}
+	hist, err := s.publisher.DraftHistory(id)
+	if err != nil {
+		pubError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"draft": d, "history": hist})
+}
+
+// pubApprove publishes a draft. An optional JSON body {body,title,description}
+// is the reviewer's edit of the free text, applied before publishing.
 func (s *Server) pubApprove(w http.ResponseWriter, r *http.Request) {
-	d, err := s.publisher.Approve(r.Context(), approver(r), r.PathValue("id"))
+	var edit publisher.Edit
+	if r.ContentLength != 0 {
+		if !decode(w, r, &edit) {
+			return
+		}
+	}
+	d, err := s.publisher.ApproveEdited(r.Context(), approver(r), r.PathValue("id"), edit)
 	if err != nil {
 		if d.ID != "" {
 			writeJSON(w, pubStatusCode(err), map[string]any{"error": err.Error(), "draft": d})
@@ -171,7 +196,13 @@ func (s *Server) pubApprove(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) pubReject(w http.ResponseWriter, r *http.Request) {
-	d, err := s.publisher.Reject(approver(r), r.PathValue("id"))
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	if r.ContentLength != 0 && !decode(w, r, &req) {
+		return
+	}
+	d, err := s.publisher.RejectWithReason(approver(r), r.PathValue("id"), req.Reason)
 	if err != nil {
 		pubError(w, err)
 		return

@@ -75,6 +75,7 @@ func (s *Service) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/chat/state", s.auth(s.state))
 	mux.HandleFunc("POST /v1/chat/consent", s.auth(s.accept))
 	mux.HandleFunc("DELETE /v1/chat/consent", s.auth(s.withdraw))
+	mux.HandleFunc("DELETE /v1/chat/account", s.auth(s.eraseAccount))
 	mux.HandleFunc("GET /v1/chat/conversations", s.auth(s.list))
 	mux.HandleFunc("POST /v1/chat/conversations", s.auth(s.create))
 	mux.HandleFunc("GET /v1/chat/conversations/{id}", s.auth(s.get))
@@ -162,6 +163,15 @@ func (s *Service) accept(w http.ResponseWriter, r *http.Request, rc reqCtx) {
 func (s *Service) withdraw(w http.ResponseWriter, _ *http.Request, rc reqCtx) {
 	s.consents.Withdraw(rc.account)
 	writeJSON(w, http.StatusOK, map[string]any{"consent": false})
+}
+
+// eraseAccount is the website's erasure step: all of the account's
+// conversations and its consent record go. Safe to repeat.
+func (s *Service) eraseAccount(w http.ResponseWriter, _ *http.Request, rc reqCtx) {
+	n := s.store.EraseAccount(rc.account)
+	s.consents.Withdraw(rc.account)
+	s.limits.Forget(rc.account)
+	writeJSON(w, http.StatusOK, map[string]any{"erased": true, "conversations": n})
 }
 
 func view(c Conversation) map[string]any {

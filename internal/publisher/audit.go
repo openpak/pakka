@@ -85,3 +85,20 @@ func (a *Audit) Recent(n int) []AuditEntry {
 	}
 	return append([]AuditEntry(nil), a.tail[len(a.tail)-n:]...)
 }
+
+// ForDraft reads one draft's lines from the durable log (the in-memory tail
+// holds only the latest few hundred).
+func (a *Audit) ForDraft(draftID, eventID string) ([]AuditEntry, error) {
+	rows, err := a.st.AuditFor(draftID, eventID)
+	if err != nil {
+		return nil, fmt.Errorf("audit log: %w", err)
+	}
+	out := make([]AuditEntry, 0, len(rows))
+	for _, raw := range rows {
+		var e AuditEntry
+		if json.Unmarshal(raw, &e) == nil {
+			out = append(out, e)
+		}
+	}
+	return out, nil
+}

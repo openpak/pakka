@@ -170,8 +170,42 @@ func (q *Queue) Finish(id string, res *Result, runErr error) {
 	_ = q.persist()
 }
 
+// Edit replaces a waiting draft's free text, keeping the proposal as it was
+// first made. Only pending or failed drafts can change.
+func (q *Queue) Edit(id, reviewer string, e Edit, preview func(Action) string) (Draft, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	d, ok := q.drafts[id]
+	if !ok {
+		return Draft{}, ErrNoDraft
+	}
+	if d.Status != StatusPending && d.Status != StatusFailed {
+		return Draft{}, fmt.Errorf("%w (status %s)", ErrNotPending, d.Status)
+	}
+	if d.Action.Template != "" {
+		return Draft{}, fmt.Errorf("%w: a templated post has no free text to edit", ErrBadAction)
+	}
+	if d.Original == nil {
+		orig := d.Action
+		d.Original = &orig
+	}
+	if e.Body != "" {
+		d.Action.Body = e.Body
+	}
+	if e.Title != "" {
+		d.Action.Title = e.Title
+	}
+	if e.Description != "" {
+		d.Action.Description = e.Description
+	}
+	d.EditedBy = reviewer
+	d.Preview = preview(d.Action)
+	_ = q.persist()
+	return *d, nil
+}
+
 // Reject discards a pending draft.
-func (q *Queue) Reject(id, reviewer string) (Draft, error) {
+func (q *Queue) Reject(id, reviewer, reason string) (Draft, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	d, ok := q.drafts[id]
@@ -182,7 +216,7 @@ func (q *Queue) Reject(id, reviewer string) (Draft, error) {
 		return Draft{}, fmt.Errorf("%w (status %s)", ErrNotPending, d.Status)
 	}
 	t := q.now().UTC()
-	d.Status, d.Reviewer, d.DecidedAt = StatusRejected, reviewer, &t
+	d.Status, d.Reviewer, d.DecidedAt, d.RejectReason = StatusRejected, reviewer, &t, reason
 	_ = q.persist()
 	return *d, nil
 }
