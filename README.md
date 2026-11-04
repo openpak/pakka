@@ -185,7 +185,7 @@ Broken first-seen persists in Postgres (`PAKKA_DATABASE_URL`; see State below), 
 **One shop surface for every console.** The broken tracker is per console:
 `POST /v1/shop/broken` takes `{"console": "wiiu", "broken": {...}}`, and
 `POST /v1/eshop-broken` stays as an alias for `console=switch` (run-hb.sh
-keeps working). `PAKKA_SHOP_CONSOLES` (default `switch`, e.g. `switch,wiiu`)
+keeps working). `PAKKA_SHOP_CONSOLES` (default `switch`, e.g. `switch,wiiu,ps3`)
 names the managed consoles; `PAKKA_SHOP_CORE_URL` and `PAKKA_SHOP_CORE_KEY`
 point at shop-core, where the broken state is then kept durably (table
 `shop_broken`; the Switch's old state doc is migrated there once). Alerts

@@ -83,7 +83,7 @@ func (b *Bot) cmdShop(ctx context.Context, in Incoming, args []string) string {
 			return msg
 		}
 		if console != "switch" || a.Watcher == nil {
-			return fmt.Sprintf("no sync is wired for %s on this Pakka instance (the Wii U runner arrives with phase P5)", console)
+			return fmt.Sprintf("no sync is wired for %s on this Pakka instance (the %s runner arrives with its phase P5)", console, consoleName(console))
 		}
 		started, note := a.Watcher.RequestSync("staff request by "+in.AuthorID, func(msg string) { b.reply(b.RedactingSender(), in.ChannelID, msg) })
 		if started {
@@ -281,6 +281,8 @@ func consoleName(console string) string {
 		return "Switch"
 	case "wiiu":
 		return "Wii U"
+	case "ps3":
+		return "PS3"
 	}
 	return console
 }

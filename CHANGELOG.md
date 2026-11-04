@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.14.2 - 2026-11-04
+
+- PlayStation 3 as a managed shop console (card #130): set `PAKKA_SHOP_CONSOLES=switch,wiiu,ps3`; `!pakka shop` shows "PS3". Everything else is the console-neutral surface unchanged. Needs shop-core v0.2.0 (`ps3` console row, `OPHB#####` ids).
+
 ## 0.14.1 - 2026-11-04
 
 - The `shop` commands are enabled by `PAKKA_SHOP_CORE_URL` alone, so the gateway instance (which has no eShop watcher settings) answers `!pakka shop` too; `sync` and the Switch watch detail stay with the instance that runs the watcher.
