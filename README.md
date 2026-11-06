@@ -211,6 +211,21 @@ Verify `/healthz` first, then confirm from the workstation with
 `clients/tools/pakka-announce.sh <channel-id> <text...>` — e.g.
 `[Switch - nx-baas] deployed v1.2.3, healthy` to #alerts.
 
+Feature announcements: `clients/tools/announce-feature.sh "<title>" "<text>" [image-url]`
+posts one feature everywhere in one command: Discord #announcements (the
+`/v1/announce` relay; the image URL goes on its own line so Discord embeds
+it), an OpenVerse Announcements post and an OpenPak News article (both queued
+as publisher drafts and approved as the operator, so the audit log records
+them; News gets the image as its banner via `news.publish` `image_url`).
+The script appends the alpha notice ("OpenPak is in alpha: everything here is
+experimental and may change or break.") to every post automatically. The
+image must be a JPEG on our own host, e.g. a file under the website's
+`web/static/announce/` (served at `https://openpak.org/static/announce/`).
+The OpenVerse Announcements community takes no images, so that post is text
+only. Text must fit Discord's 2000 characters and News's 1200 bytes, in
+points wording, with no claim that has not been tested. `ANNOUNCE_DRY_RUN=1`
+prints the payloads and sends nothing.
+
 Release watch: with `PAKKA_RELEASE_WATCH` (comma-separated openpak/*
 repos) set, Pakka nudges staff once a repo's latest release ages past
 `PAKKA_RELEASE_STALE_AFTER` (default 72h) without a newer one:

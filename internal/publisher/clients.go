@@ -219,6 +219,7 @@ type NewsAdmin interface {
 	Articles(ctx context.Context, topic string) ([]NewsArticle, error)
 	PostArticle(ctx context.Context, topic string, a NewsArticleCreate) (uint32, error)
 	Publish(ctx context.Context, note string) (int, error)
+	PutArticleImage(ctx context.Context, topic string, id uint32, jpeg []byte) error
 }
 
 // NewsChannel is the part of a channel Pakka reads.
@@ -292,6 +293,27 @@ func (c *HTTPNews) PostArticle(ctx context.Context, topic string, a NewsArticleC
 	}
 	err := c.h.do(ctx, http.MethodPost, "/admin/v1/channels/"+url.PathEscape(topic)+"/articles", a, &out)
 	return out.NewsID, err
+}
+
+// PutArticleImage uploads a JPEG as an article's banner image.
+func (c *HTTPNews) PutArticleImage(ctx context.Context, topic string, id uint32, jpeg []byte) error {
+	path := fmt.Sprintf("/admin/v1/channels/%s/articles/%d/image", url.PathEscape(topic), id)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.h.base+path, bytes.NewReader(jpeg))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("X-Internal-Key", c.h.key)
+	req.Header.Set("Content-Type", "image/jpeg")
+	resp, err := c.h.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("%s: %w", c.h.service, err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+	if resp.StatusCode/100 != 2 {
+		return &APIError{Service: c.h.service, Status: resp.StatusCode, Message: strings.TrimSpace(string(raw))}
+	}
+	return nil
 }
 
 // Publish ships the News source tree to consoles and returns the build.

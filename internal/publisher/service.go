@@ -124,8 +124,8 @@ func (s *Service) validate(a *Action) error {
 			return fmt.Errorf("%w: a News article needs a title and text", ErrBadAction)
 		}
 	}
-	if a.ImageURL != "" && a.Tool != ToolPost {
-		return fmt.Errorf("%w: only posts take an image", ErrBadAction)
+	if a.ImageURL != "" && a.Tool != ToolPost && a.Tool != ToolNews {
+		return fmt.Errorf("%w: only posts and News articles take an image", ErrBadAction)
 	}
 	return nil
 }

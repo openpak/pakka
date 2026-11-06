@@ -2,6 +2,7 @@ package publisher
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"sort"
 	"strconv"
@@ -100,9 +101,22 @@ func (s *Service) execNews(ctx context.Context, a Action) (Result, error) {
 	if len(apps) > 0 {
 		art.More = map[string]any{"type": "game", "application_ids": apps}
 	}
+	var banner []byte
+	if a.ImageURL != "" {
+		b64, err := s.FetchImage(ctx, a.ImageURL)
+		if err != nil {
+			return Result{}, err
+		}
+		if banner, err = base64.StdEncoding.DecodeString(b64); err != nil {
+			return Result{}, fmt.Errorf("%w: image: %v", ErrBadAction, err)
+		}
+	}
 	var ids []string
 	for _, t := range topics {
 		id, err := s.news.PostArticle(ctx, t, art)
+		if err == nil && banner != nil {
+			err = s.news.PutArticleImage(ctx, t, id, banner)
+		}
 		if err != nil {
 			// Articles already created stay in the source tree unpublished;
 			// say which, so staff can finish by hand.

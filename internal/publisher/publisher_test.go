@@ -112,6 +112,12 @@ func (f *fakeNews) PostArticle(_ context.Context, t string, a NewsArticleCreate)
 	f.created = append(f.created, fmt.Sprintf("%s:%d:%s", t, id, a.Title))
 	return id, nil
 }
+func (f *fakeNews) PutArticleImage(_ context.Context, t string, id uint32, jpeg []byte) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.created = append(f.created, fmt.Sprintf("image:%s:%d:%d", t, id, len(jpeg)))
+	return nil
+}
 func (f *fakeNews) Publish(context.Context, string) (int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -748,9 +754,27 @@ func TestPostWithImageUsesFetcher(t *testing.T) {
 			t.Fatalf("image %q", p.Image)
 		}
 	}
-	a2 := Action{Tool: ToolNews, Category: CatNews, Title: "t", Body: "b", ImageURL: "https://openpak.org/x.jpg"}
+	a2 := Action{Tool: ToolBoss, Category: CatBoss, Title: "t", Body: "b", ImageURL: "https://openpak.org/x.jpg"}
 	if _, err := s.Submit(context.Background(), Staff("a"), a2, true); !errors.Is(err, ErrBadAction) {
-		t.Fatalf("image on news: %v", err)
+		t.Fatalf("image on a tool without images: %v", err)
+	}
+}
+
+func TestNewsWithImageUploadsBanner(t *testing.T) {
+	s, _, news := newSvc(t, CatNews)
+	s.FetchImage = func(context.Context, string) (string, error) { return "QUJD", nil }
+	a := Action{Tool: ToolNews, Category: CatNews, Title: "t", Body: "b", ImageURL: "https://openpak.org/x.jpg"}
+	if _, err := s.Submit(context.Background(), Staff("a"), a, true); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, c := range news.created {
+		if strings.HasPrefix(c, "image:") && strings.HasSuffix(c, ":3") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no banner upload: %v", news.created)
 	}
 }
 

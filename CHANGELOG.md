@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.15.0 - 2026-11-06
+
+- `news.publish` takes an optional `image_url` (same own-host JPEG rules as posts): Pakka fetches it and uploads it as the article's banner image before publishing. Used by `clients/tools/announce-feature.sh`.
+
 ## 0.14.2 - 2026-11-04
 
 - PlayStation 3 as a managed shop console (card #130): set `PAKKA_SHOP_CONSOLES=switch,wiiu,ps3`; `!pakka shop` shows "PS3". Everything else is the console-neutral surface unchanged. Needs shop-core v0.2.0 (`ps3` console row, `OPHB#####` ids).

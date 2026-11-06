@@ -37,7 +37,7 @@ Tool scopes: `openverse:post`, `openverse:community`, `news:publish`, `boss:queu
 
 - `openverse.post`: post as Pakka in a community, optional image from our own hosts (`PAKKA_PUBLISH_IMAGE_HOSTS`, https, JPEG, 4 MiB, no off-list redirects), optional Discuss link, optional send-as-News.
 - `openverse.community`: create a community (artwork is generated; found again by name or title id, so it is repeatable).
-- `news.publish`: one article per fitting channel (the game's channel by title id, plus `openpak_news`) and one publish. The article text is one paragraph. Wii U and 3DS News are not involved.
+- `news.publish`: optional `image_url` (own host, JPEG) becomes the article banner. One article per fitting channel (the game's channel by title id, plus `openpak_news`) and one publish. The article text is one paragraph. Wii U and 3DS News are not involved.
 - `boss.notify`: always answers `blocked: no BOSS keys`; the draft stays failed and retryable.
 - The Xbox 360 feed and OpenVerse Lite read from OpenVerse, so posts reach them without anything extra.
 
